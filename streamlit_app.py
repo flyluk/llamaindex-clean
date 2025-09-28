@@ -32,7 +32,7 @@ model = st.sidebar.selectbox("Model", ["gpt-oss:20b", "llama3.2:3b", "llama3.1:8
 indexer = get_indexer(db_path, model)
 
 # Main interface
-tab1, tab2, tab3 = st.tabs(["🔍 Search", "📄 Process Document", "⚙️ Admin"])
+tab1, tab2 = st.tabs(["🔍 Search", "⚙️ Admin"])
 
 with tab1:
     st.header("Search Documents")
@@ -41,7 +41,7 @@ with tab1:
     col1, col2 = st.columns(2)
     
     with col1:
-        use_direct = st.checkbox("Direct vector search", help="Skip summary/keyword search")
+        use_direct = st.checkbox("Direct vector search", help="Skip keyword search")
     
     if st.button("Search", type="primary") and query:
         with st.spinner("Searching..."):
@@ -56,32 +56,6 @@ with tab1:
                 st.markdown(str(result))
 
 with tab2:
-    st.header("Process Large Document")
-    
-    uploaded_file = st.file_uploader("Upload document", type=['pdf', 'docx', 'txt'])
-    
-    if uploaded_file:
-        # Save uploaded file temporarily
-        temp_path = f"/tmp/{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        if st.button("Process Document", type="primary"):
-            with st.spinner("Processing document..."):
-                try:
-                    summary = indexer.process_large_document(temp_path)
-                    if summary:
-                        st.success("Document processed successfully!")
-                        st.markdown("### Summary")
-                        st.markdown(summary)
-                    else:
-                        st.info("Document already processed")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                finally:
-                    os.remove(temp_path)
-
-with tab3:
     st.header("Database Administration")
     
     col1, col2 = st.columns(2)
@@ -89,10 +63,8 @@ with tab3:
     with col1:
         if st.button("Show Statistics"):
             doc_count = len(indexer.doc_collection.get()["ids"])
-            summary_count = len(indexer.summary_collection.get()["ids"])
             
             st.metric("Documents", doc_count)
-            st.metric("Summaries", summary_count)
             st.info(f"Database: {os.path.abspath(db_path)}")
     
     with col2:
@@ -108,10 +80,10 @@ with tab3:
                 st.session_state.confirm_clear = True
                 st.warning("Click again to confirm deletion")
     
-    if st.button("Show All Summaries"):
-        with st.spinner("Loading summaries..."):
-            _, output = capture_output(indexer.display_all_summaries)
+    if st.button("Show Status"):
+        with st.spinner("Loading status..."):
+            _, output = capture_output(indexer.display_status)
             if output:
                 st.markdown(output)
             else:
-                st.info("No summaries found")
+                st.info("No status information found")

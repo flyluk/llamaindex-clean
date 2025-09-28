@@ -33,87 +33,13 @@ class DocumentIndexer:
     def _setup_storage(self):
         self.client = chromadb.PersistentClient(path=self.db_path)
         self.doc_collection = self.client.get_or_create_collection("documents")
-        self.summary_collection = self.client.get_or_create_collection("summaries")
         self.status_collection = self.client.get_or_create_collection("status")
         
         self.doc_store = ChromaVectorStore(chroma_collection=self.doc_collection)
-        self.summary_store = ChromaVectorStore(chroma_collection=self.summary_collection)
         
         self.doc_context = StorageContext.from_defaults(vector_store=self.doc_store)
-        self.summary_context = StorageContext.from_defaults(vector_store=self.summary_store)
     
-    def _create_summary_document(self, file_path, summary_text, chunk_count=0, original_size=0):
-        """Create standardized summary document with consistent metadata"""
-        return Document(
-            text=f"SUMMARY: {summary_text}\nFILE: {os.path.basename(file_path)}",
-            metadata={
-                'file_name': os.path.basename(file_path),
-                'file_path': file_path,
-                'summary': "refer to text",
-                'chunk_count': chunk_count,
-                'original_size': original_size
-            }
-        )
-    
-    def _create_summaries(self, documents):
-        summary_nodes = []
-        for doc in documents:
-            doc_size = len(doc.text)
-            chunk_size, overlap = self._get_smart_chunk_params(doc_size)
-            file_path = doc.metadata.get('file_path', '')
-            
-            # Use smart chunking for large documents
-            if doc_size > chunk_size:
-                splitter = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
-                nodes = splitter.get_nodes_from_documents([doc])
-                
-                # Create summary for each chunk
-                summaries = []
-                for i, node in enumerate(nodes):
-                    summary = Settings.llm.complete(f"Summarize in 1-2 sentences:\n\n{node.text}")
-                    summaries.append(str(summary))
-                    
-                    # Save individual chunk summary
-                    chunk_summary_doc = Document(
-                        text=f"CHUNK SUMMARY: {summary}\nFILE: {os.path.basename(file_path)}",
-                        metadata={
-                            'file_name': os.path.basename(file_path),
-                            'file_path': file_path,
-                            'summary': "refer to text",
-                            'summary_type': 'chunk',
-                            'chunk_index': i,
-                            'chunk_count': len(nodes),
-                            'original_size': doc_size
-                        }
-                    )
-                    summary_nodes.append(chunk_summary_doc)
-                
-                # Create overall summary
-                overall_summary = Settings.llm.complete(
-                    f"Create comprehensive summary from:\n\n{chr(10).join(summaries)}"
-                )
-                chunk_count = len(nodes)
-            else:
-                # Simple summary for smaller documents
-                overall_summary = Settings.llm.complete(
-                    f"Create comprehensive summary from:\n\n{doc.text}."
-                )
-                chunk_count = 1
-            
-            # Save overall summary
-            overall_summary_doc = Document(
-                text=f"OVERALL SUMMARY: {overall_summary}\nFILE: {os.path.basename(file_path)}",
-                metadata={
-                    'file_name': os.path.basename(file_path),
-                    'file_path': file_path,
-                    'summary': "refer to text",
-                    'summary_type': 'overall',
-                    'chunk_count': chunk_count,
-                    'original_size': doc_size
-                }
-            )
-            summary_nodes.append(overall_summary_doc)
-        return summary_nodes
+
     
     def _get_processed_files(self):
         """Get set of already processed file paths"""
@@ -204,17 +130,14 @@ class DocumentIndexer:
     def load_or_create_index(self):
         """Load existing index or create empty index structure"""
         num_docs = len(self.doc_collection.get()["ids"])
-        num_summaries = len(self.summary_collection.get()["ids"])
-        print(f"ChromaDB status: {num_docs} documents, {num_summaries} summaries")
+        print(f"ChromaDB status: {num_docs} documents (DB: {self.db_path})")
         
         if os.path.exists(self.db_path) and num_docs > 0:
             print("Loading existing index")
             self.index = VectorStoreIndex.from_vector_store(self.doc_store, storage_context=self.doc_context)
-            self.summary_index = VectorStoreIndex.from_vector_store(self.summary_store, storage_context=self.summary_context)
         else:
             print("Creating new index")
             self.index = VectorStoreIndex([], storage_context=self.doc_context)
-            self.summary_index = VectorStoreIndex([], storage_context=self.summary_context)
         
         print("Index loading/creation completed")
     
@@ -226,8 +149,7 @@ class DocumentIndexer:
         documents = self._load_documents()
         if not documents:
             return
-            
-        processed_files = self._get_processed_files()
+                    
         completed_files = self._get_completed_files()
         remaining_docs = [doc for doc in documents if doc.metadata.get('file_path') not in completed_files]
         
@@ -239,51 +161,12 @@ class DocumentIndexer:
                 
                 try:
                     self.index.insert(doc)
-                    summary_docs = self._create_summaries([doc])
-                    for summary_doc in summary_docs:
-                        self.summary_index.insert(summary_doc)
                     self._mark_file_complete(doc.metadata.get('file_path'))
                 except Exception as e:
                     print(f"Failed to process {doc.metadata.get('file_name', 'Unknown')}: {e}")
                     continue
-        
-        self._generate_missing_summaries()
     
-    def _generate_missing_summaries(self):
-        """Generate summaries for documents that don't have them"""
-        doc_files = self._get_processed_files()
-        summary_data = self.summary_collection.get()
-        summary_files = {metadata.get('file_path') for metadata in summary_data.get('metadatas', []) if metadata.get('file_path')}
-        missing_summary_files = doc_files - summary_files
-        
-        if not missing_summary_files:
-            return
-            
-        print(f"Missing summaries for {len(missing_summary_files)} files. Generating...")
-        doc_data = self.doc_collection.get(include=['metadatas', 'documents'])
-        
-        # Group documents by file_path
-        files_docs = {}
-        for i, metadata in enumerate(doc_data['metadatas']):
-            file_path = metadata.get('file_path')
-            if file_path in missing_summary_files:
-                if file_path not in files_docs:
-                    files_docs[file_path] = {'texts': [], 'metadata': metadata}
-                files_docs[file_path]['texts'].append(doc_data['documents'][i])
-        
-        # Create summaries for grouped documents
-        for file_path, file_data in files_docs.items():
-            combined_text = '\n\n'.join(file_data['texts'])
-            doc = Document(text=combined_text, metadata=file_data['metadata'])
-            
-            try:
-                summary_docs = self._create_summaries([doc])
-                for summary_doc in summary_docs:
-                    self.summary_index.insert(summary_doc)
-                self._mark_file_complete(file_path)
-                print(f"Generated summary for {file_data['metadata'].get('file_name', 'Unknown')}")
-            except Exception as e:
-                print(f"Failed to generate summary for {file_data['metadata'].get('file_name', 'Unknown')}: {e}")
+
     
     def sync_new_files(self):
         """Sync new files that aren't in the index yet"""
@@ -331,11 +214,6 @@ class DocumentIndexer:
                     
                     # Add to main index
                     self.index.insert(doc)
-                    
-                    # Create and add summary immediately
-                    summary_docs = self._create_summaries([doc])
-                    for summary_doc in summary_docs:
-                        self.summary_index.insert(summary_doc)
                 
                 print(f"Processed {len(new_documents)} new documents")
     
@@ -416,84 +294,9 @@ class DocumentIndexer:
         print(f"Found {len(results)} matching documents")
         return sorted(results, key=lambda x: x['score'], reverse=True)[:top_k]
     
-    def summary_search(self, query, top_k=3):
-        if not hasattr(self, 'summary_index'):
-            return []
-            
-        retriever = self.summary_index.as_retriever(similarity_top_k=top_k)
-        nodes = retriever.retrieve(query)
-        
-        return [{
-            'file_name': node.metadata.get('file_name', 'Unknown'),
-            'summary': node.metadata.get('summary', ''),
-            'score': node.score
-        } for node in nodes]
+
     
-    def _get_smart_chunk_params(self, doc_size):
-        """Determine optimal chunking parameters based on document size"""
-        if doc_size > 100000:
-            return 2000, 300
-        elif doc_size > 50000:
-            return 1500, 200
-        else:
-            return 1000, 150
-    
-    def _is_already_processed(self, file_path):
-        """Check if document is already processed"""
-        try:
-            existing_data = self.summary_collection.get(include=["metadatas"])
-            for metadata in existing_data["metadatas"]:
-                if metadata.get("file_path") == file_path:
-                    return True
-        except:
-            pass
-        return False
-    
-    def process_large_document(self, file_path):
-        """Process large document with smart chunking"""
-        if self._is_already_processed(file_path):
-            print(f"Document already processed: {os.path.basename(file_path)}")
-            return None
-        
-        text = self._convert_with_docling(file_path)
-        doc = Document(
-            text=text,
-            metadata={
-                'file_name': os.path.basename(file_path),
-                'file_path': file_path
-            }
-        )
-        
-        doc_size = len(doc.text)
-        print(f"Processing: {os.path.basename(file_path)} ({doc_size:,} chars)")
-        
-        chunk_size, overlap = self._get_smart_chunk_params(doc_size)
-        splitter = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
-        nodes = splitter.get_nodes_from_documents([doc])
-        
-        print(f"Created {len(nodes)} chunks (size: {chunk_size}, overlap: {overlap})")
-        
-        summary_nodes = nodes[:min(10, len(nodes))]
-        summaries = []
-        for node in summary_nodes:
-            summary = Settings.llm.complete(f"Summarize in 1-2 sentences:\n\n{node.text}")
-            summaries.append(str(summary))
-        
-        overall_summary = Settings.llm.complete(
-            f"Create comprehensive summary from:\n\n{chr(10).join(summaries)}"
-        )
-        
-        for node in nodes:
-            node.metadata.update({'file_name': os.path.basename(file_path)})
-        self.index.insert_nodes(nodes)
-        
-        summary_doc = self._create_summary_document(
-            file_path, overall_summary, len(nodes), doc_size
-        )
-        self.summary_index.insert(summary_doc)
-        
-        print(f"Summary: {overall_summary}")
-        return str(overall_summary)
+
     
     def delete_file(self, file_path):
         """Delete all data for a specific file from all collections"""
@@ -506,14 +309,6 @@ class DocumentIndexer:
         if doc_ids_to_delete:
             self.doc_collection.delete(ids=doc_ids_to_delete)
             deleted_count += len(doc_ids_to_delete)
-        
-        # Delete from summaries collection
-        summary_data = self.summary_collection.get(include=["metadatas"])
-        summary_ids_to_delete = [summary_data["ids"][i] for i, metadata in enumerate(summary_data["metadatas"]) 
-                                if metadata.get('file_path') == file_path]
-        if summary_ids_to_delete:
-            self.summary_collection.delete(ids=summary_ids_to_delete)
-            deleted_count += len(summary_ids_to_delete)
         
         # Delete from status collection
         status_data = self.status_collection.get(include=["metadatas"])
@@ -593,29 +388,25 @@ class DocumentIndexer:
         
         return documents
 
-    def display_all_summaries(self):
-        """Display complete status and summaries in markdown format"""
+    def display_status(self):
+        """Display complete document status in markdown format"""
         try:
             # Database status
             doc_data = self.doc_collection.get(include=["metadatas"])
-            summary_data = self.summary_collection.get(include=["metadatas"])
             status_data = self.status_collection.get(include=["metadatas"])
             
             print(f"# Complete Document Status\n")
             print(f"**Database Path:** {os.path.abspath(self.db_path)}")
             print(f"**Model:** {self.model}")
-            print(f"**Collections:** Documents: {len(doc_data['ids'])}, Summaries: {len(summary_data['ids'])}, Status: {len(status_data['ids'])}\n")
+            print(f"**Collections:** Documents: {len(doc_data['ids'])}, Status: {len(status_data['ids'])}\n")
             
             # Processing status overview
             processed_files = self._get_processed_files()
             completed_files = self._get_completed_files()
-            summary_files = {m.get('file_path') for m in summary_data['metadatas'] if m.get('file_path')}
             
             print(f"## Processing Status\n")
             print(f"- **Total processed files:** {len(processed_files)}")
-            print(f"- **Completed files:** {len(completed_files)}")
-            print(f"- **Files with summaries:** {len(summary_files)}")
-            print(f"- **Missing summaries:** {len(processed_files - summary_files)}\n")
+            print(f"- **Completed files:** {len(completed_files)}\n")
             
             # File status details
             if processed_files:
@@ -631,85 +422,20 @@ class DocumentIndexer:
                             'path': file_path,
                             'processed': True,
                             'completed': file_path in completed_files,
-                            'has_summary': file_path in summary_files,
                             'doc_metadata': metadata
                         }
                 
-                # Add summary info
-                for metadata in summary_data['metadatas']:
-                    file_path = metadata.get('file_path')
-                    if file_path and file_path in all_files:
-                        all_files[file_path]['summary_metadata'] = metadata
-                
                 # Display file status table
-                print("| File | Status | Size | Chunks | Summary |")
-                print("|------|--------|------|--------|---------|")
+                print("| File | Status |")
+                print("|------|--------|")
                 
                 for file_path, info in sorted(all_files.items()):
                     name = info['name']
                     status = "✅ Complete" if info['completed'] else "⚠️ Partial"
                     
-                    summary_meta = info.get('summary_metadata', {})
-                    size = summary_meta.get('original_size', 0)
-                    chunks = summary_meta.get('chunk_count', 0)
-                    has_summary = "✅" if info['has_summary'] else "❌"
-                    
-                    size_str = f"{size:,}" if size else "N/A"
-                    chunks_str = str(chunks) if chunks else "N/A"
-                    
-                    print(f"| {name} | {status} | {size_str} | {chunks_str} | {has_summary} |")
+                    print(f"| {name} | {status} |")
                 
                 print("\n")
-            
-            # Document summaries
-            if not summary_data["ids"]:
-                print("## No Summaries Available\n")
-                print("No summaries found. Run processing to generate summaries.\n")
-                return
-            
-            # Group summaries by document
-            docs = {}
-            summary_docs_data = self.summary_collection.get(include=["metadatas", "documents"])
-            for i, metadata in enumerate(summary_docs_data["metadatas"]):
-                file_name = metadata.get('file_name', 'Unknown')
-                if file_name not in docs:
-                    docs[file_name] = []
-                # Add both metadata and document text
-                summary_item = metadata.copy()
-                summary_item['doc_text'] = summary_docs_data["documents"][i]
-                docs[file_name].append(summary_item)
-            
-            print(f"## Document Summaries ({len(docs)} documents)\n")
-            
-            for file_name, summaries in sorted(docs.items()):
-                print(f"### {file_name}\n")
-                
-                # Separate overall and chunk summaries
-                overall_summaries = [s for s in summaries if s.get('summary_type') == 'overall']
-                chunk_summaries = [s for s in summaries if s.get('summary_type') == 'chunk']
-                
-                # Display overall summary first
-                for summary_data in overall_summaries:
-                    summary_text = summary_data.get('doc_text', 'No summary')
-                    chunk_count = summary_data.get('chunk_count', 0)
-                    original_size = summary_data.get('original_size', 0)
-                    file_path = summary_data.get('file_path', 'Unknown path')
-                    
-                    print(f"**Path:** `{file_path}`")
-                    print(f"**Size:** {original_size:,} chars | **Chunks:** {chunk_count}")
-                    print(f"**Type:** Overall Summary\n")
-                    print(f"{summary_text}\n")
-                
-                # Display chunk summaries if any
-                if chunk_summaries:
-                    print(f"**Chunk Summaries ({len(chunk_summaries)} chunks):**\n")
-                    for summary_data in sorted(chunk_summaries, key=lambda x: x.get('chunk_index', 0)):
-                        summary_text = summary_data.get('doc_text', 'No summary')
-                        chunk_index = summary_data.get('chunk_index', 0)
-                        print(f"- **Chunk {chunk_index + 1}:** {summary_text}")
-                    print()
-                
-                print("---\n")
                     
         except Exception as e:
             print(f"Error displaying status: {e}")
@@ -836,18 +562,7 @@ class DocumentIndexer:
             print(f"\nKeyword-based response:\n{response}")
             return response
         
-        # Try summary search second
-        summary_results = self.summary_search(query_text)
-        if summary_results:
-            print(f"\nFound {len(summary_results)} relevant summaries:")
-            for i, result in enumerate(summary_results):
-                print(f"{i+1}. {result['file_name']} (score: {result['score']:.3f})")
-                print(f"Summary: {result['summary']}")
-            
-            combined_context = "\n\n".join([f"File: {result['file_name']}\nSummary: {result['summary']}" for result in summary_results])
-            response = Settings.llm.complete(f"Based on:\n{combined_context}\n\nQuestion: {query_text}")
-            print(f"\nSummary-based response:\n{response}")
-            return response
+
         
         # Fallback to vector search
         print("\nUsing vector search fallback")
