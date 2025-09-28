@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Document Structure Schema",
+  "description": "Schema for hierarchical document structure extraction",
+  "type": "array",
+  "items": {
+    "$ref": "#/definitions/StructureItem"
+  },
+  "definitions": {
+    "StructureItem": {
+      "type": "object",
+      "required": ["type", "number"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["schedule", "part", "division", "subdivision", "section", "chapter", "article", "header"]
+        },
+        "number": {
+          "type": "string",
+          "description": "The identifier/number for this structural element"
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional title text for this element"
+        },
+        "content": {
+          "type": "string",
+          "description": "Text content of this structural element"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested parts within this element"
+        },
+        "divisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested divisions within this element"
+        },
+        "subdivisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested subdivisions within this element"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested sections within this element"
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested chapters within this element"
+        },
+        "articles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested articles within this element"
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StructureItem"
+          },
+          "description": "Nested headers within this element"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
