@@ -292,7 +292,7 @@ with tab3:
     
     if st.button("Show Status"):
         with st.spinner("Loading status..."):
-            _, output = capture_output(indexer.display_status)
+            _, output = capture_output_live(indexer.display_status)
             if output:
                 st.markdown(output)
             else:

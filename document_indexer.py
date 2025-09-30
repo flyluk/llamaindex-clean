@@ -540,7 +540,7 @@ class DocumentIndexer:
     
     def query(self, query_text, use_direct=False, similarity_top_k=5):
         print(f"Query: {query_text}")
-        print(f"Mode: {'Direct vector' if use_direct else 'Keyword -> Summary -> Vector'}")
+        print(f"Mode: {'Direct vector' if use_direct else 'Sentence -> Keyword -> Vector'}")
         
         # Check if query is asking for specific section numbers
         import re

@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  streamlit:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - ./chroma_db:/app/chroma_db
+    environment:
+      - PYTHONPATH=/app
+    command: streamlit run streamlit_app.py --server.address 0.0.0.0
