@@ -43,3 +43,4 @@ data/
 ingest.json
 llamaindex.code-workspace
 
+search_history.json

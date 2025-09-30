@@ -6,6 +6,8 @@ from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from docling.document_converter import DocumentConverter
+from structure_detect_n_extract import extract_structure
+import re
 
 try:
     from llama_index.core.evaluation import SemanticSimilarityEvaluator
@@ -69,6 +71,23 @@ class DocumentIndexer:
         converter = DocumentConverter()
         result = converter.convert(file_path)
         return result.document.export_to_markdown()
+    
+    def _detect_legal_document(self, text):
+        """Detect if document is a legal document based on structure patterns"""
+        legal_patterns = [
+            r'\*\*Schedule\s+\d+[A-Z]*',
+            r'\*\*Part\s+\d+',
+            r'\*\*Division\s+\d+',
+            r'\*\*Subdivision\s+\d+',
+            r'\*\*\d+\.\s+[^*]+\*\*'
+        ]
+        
+        total_matches = 0
+        for pattern in legal_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            total_matches += len(matches)
+        
+        return total_matches >= 3
     
     def _load_documents(self):
         documents = []
@@ -141,12 +160,18 @@ class DocumentIndexer:
         
         print("Index loading/creation completed")
     
-    def process_files(self):
+    def process_files(self, target_path=None):
         """Process files from target directory"""
+        original_target_dir = self.target_dir
+        if target_path:
+            self.target_dir = target_path
+            
         if not self.target_dir or not os.path.exists(self.target_dir):
+            self.target_dir = original_target_dir
             return
             
         documents = self._load_documents()
+        self.target_dir = original_target_dir
         if not documents:
             return
                     
@@ -160,6 +185,13 @@ class DocumentIndexer:
                 print(f"Processing {i}/{len(remaining_docs)}: {doc.metadata.get('file_name', 'Unknown')}")
                 
                 try:
+                    # Check if document is legal and extract structure
+                    if self._detect_legal_document(doc.text):
+                        print(f"📋 Legal document detected: {doc.metadata.get('file_name')}")
+                        structure = extract_structure(doc.text)
+                        if structure:
+                            print(f"✅ Extracted {len(structure)} structural elements")
+                    
                     self.index.insert(doc)
                     self._mark_file_complete(doc.metadata.get('file_path'))
                 except Exception as e:
@@ -268,28 +300,47 @@ class DocumentIndexer:
     def keyword_search(self, query, top_k=3):
         data = self.doc_collection.get(include=["metadatas", "documents"])
         results = []
-        query_words = query.lower().split()
+        query_lower = query.lower()
+        query_words = query_lower.split()
         
         print(f"Keyword search for: '{query}'")
         print(f"Total documents to search: {len(data['documents'])}")
         
+        # First try whole sentence search
         for i, doc_text in enumerate(data["documents"]):
             doc_lower = doc_text.lower()
-            total_matches = 0
+            sentence_matches = doc_lower.count(query_lower)
             
-            # Count matches for each word in query
-            for word in query_words:
-                total_matches += doc_lower.count(word)
-            
-            if total_matches > 0:
-                score = total_matches / len(doc_text.split())
-                print(f"Match found in doc {i}: {total_matches} occurrences, score: {score:.6f}")
+            if sentence_matches > 0:
+                score = sentence_matches * 10 / len(doc_text.split())  # Higher weight for sentence matches
+                print(f"Sentence match in doc {i}: {sentence_matches} occurrences, score: {score:.6f}")
                 results.append({
                     'score': score,
                     'text': doc_text,
                     'type': data["metadatas"][i].get('type', 'Unknown'),
                     'number': data["metadatas"][i].get('number', '')
                 })
+        
+        # If no sentence matches, fallback to word search
+        if not results:
+            print("No sentence matches found, trying word search...")
+            for i, doc_text in enumerate(data["documents"]):
+                doc_lower = doc_text.lower()
+                total_matches = 0
+                
+                # Count matches for each word in query
+                for word in query_words:
+                    total_matches += doc_lower.count(word)
+                
+                if total_matches > 0:
+                    score = total_matches / len(doc_text.split())
+                    print(f"Word match in doc {i}: {total_matches} occurrences, score: {score:.6f}")
+                    results.append({
+                        'score': score,
+                        'text': doc_text,
+                        'type': data["metadatas"][i].get('type', 'Unknown'),
+                        'number': data["metadatas"][i].get('number', '')
+                    })
         
         print(f"Found {len(results)} matching documents")
         return sorted(results, key=lambda x: x['score'], reverse=True)[:top_k]
