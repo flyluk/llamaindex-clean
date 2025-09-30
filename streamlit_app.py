@@ -22,6 +22,23 @@ def save_search_history(history):
     with open("search_history.json", 'w') as f:
         json.dump(history, f, indent=2)
 
+def load_config():
+    config_file = "config.json"
+    default_config = {
+        "embed_base_url": "http://localhost:11434",
+        "ollama_base_url": "http://localhost:11434",
+        "default_model": "deepseek-r1:14b",
+        "default_kb": "default"
+    }
+    if os.path.exists(config_file):
+        with open(config_file, 'r') as f:
+            return {**default_config, **json.load(f)}
+    return default_config
+
+def save_config(config):
+    with open("config.json", 'w') as f:
+        json.dump(config, f, indent=2)
+
 def add_to_history(query, result, kb, model):
     history = load_search_history()
     entry = {
@@ -46,8 +63,8 @@ def get_ollama_models():
     return ["deepseek-r1:14b", "gpt-oss:20b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "deepseek-r1:8b"]
 
 @st.cache_resource
-def get_indexer(db_path, model):
-    indexer = DocumentIndexer(target_dir="", db_path=db_path, model=model)
+def get_indexer(db_path, model, embed_base_url="http://localhost:11434", ollama_base_url="http://localhost:11434"):
+    indexer = DocumentIndexer(target_dir="", db_path=db_path, model=model, embed_base_url=embed_base_url, ollama_base_url=ollama_base_url)
     indexer.load_or_create_index()
     return indexer
 
@@ -74,6 +91,9 @@ def capture_output_live(func, *args):
 
 
 
+# Load config first
+config = load_config()
+
 st.title("🦙 LlamaIndex Document Search")
 
 # Display Python version for verification
@@ -97,19 +117,56 @@ for db_dir in db_dirs:
 
 # Display as expandable tree
 st.sidebar.subheader("📚 Available Knowledge Bases")
+
+# Set KB from config with fallback
+config_kb = config.get("default_kb", "default")
+kb_index = 0
+if config_kb in kb_options:
+    kb_index = list(kb_options.keys()).index(config_kb)
+
 selected_kb = st.sidebar.radio(
     "Select Knowledge Base:",
     options=list(kb_options.keys()),
     format_func=lambda x: f"📁 {x.title()}",
-    index=0
+    index=kb_index
 )
 
 db_path = kb_options[selected_kb]
 st.sidebar.caption(f"Path: {db_path}")
+
+# Set model from config with fallback
 available_models = get_ollama_models()
-default_idx = available_models.index("deepseek-r1:14b") if "deepseek-r1:14b" in available_models else 0
-model = st.sidebar.selectbox("Model", available_models, index=default_idx)
-indexer = get_indexer(db_path, model)
+config_model = config.get("default_model", "deepseek-r1:14b")
+model_index = 0
+if config_model in available_models:
+    model_index = available_models.index(config_model)
+
+model = st.sidebar.selectbox("Model", available_models, index=model_index)
+
+# Server configuration
+st.sidebar.markdown("---")
+
+with st.sidebar.expander("🔧 Server Configuration", expanded=False):
+    change_urls = st.button("Change URLs")
+    edit_mode = st.session_state.get('edit_urls', False) or change_urls
+    
+    if change_urls:
+        st.session_state.edit_urls = True
+    
+    embed_base_url = st.text_input("Embed Base URL:", value=config["embed_base_url"], disabled=not edit_mode)
+    ollama_base_url = st.text_input("Ollama Base URL:", value=config["ollama_base_url"], disabled=not edit_mode)
+    
+    if edit_mode and st.button("Save & Reload"):
+        config["embed_base_url"] = embed_base_url
+        config["ollama_base_url"] = ollama_base_url
+        config["default_kb"] = selected_kb
+        config["default_model"] = model
+        save_config(config)
+        st.session_state.edit_urls = False
+        st.cache_resource.clear()
+        st.rerun()
+
+indexer = get_indexer(db_path, model, config["embed_base_url"], config["ollama_base_url"])
 
 # Search History in Sidebar
 st.sidebar.markdown("---")
@@ -260,7 +317,7 @@ with tab3:
         else:
             try:
                 # Create new indexer to initialize the database
-                new_indexer = DocumentIndexer(target_dir="", db_path=new_db_path, model=model)
+                new_indexer = DocumentIndexer(target_dir="", db_path=new_db_path, model=model, embed_base_url=embed_base_url, ollama_base_url=ollama_base_url)
                 new_indexer.load_or_create_index()
                 st.success(f"Created knowledge base: {new_kb_name}")
                 st.cache_resource.clear()

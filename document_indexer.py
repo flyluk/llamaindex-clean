@@ -16,21 +16,23 @@ except ImportError:
     EVALUATION_AVAILABLE = False
 
 class DocumentIndexer:
-    def __init__(self, target_dir="/mnt/c/users/flyluk/test", db_path="./chroma_db", model="gpt-oss:20b"):
+    def __init__(self, target_dir="/mnt/c/users/flyluk/test", db_path="./chroma_db", model="gpt-oss:20b", embed_base_url="http://localhost:11434", ollama_base_url="http://localhost:11434"):
         self.target_dir = target_dir
         self.db_path = db_path
         self.model = model
+        self.embed_base_url = embed_base_url
+        self.ollama_base_url = ollama_base_url
         self._setup_settings()
         self._setup_storage()
         
     def _setup_settings(self):
         Settings.embed_model = OllamaEmbedding(
             model_name="nomic-embed-text",
-            base_url="http://192.168.1.16:11434",
+            base_url=self.embed_base_url,
             embed_batch_size=1
         )
         Settings.node_parser = SentenceSplitter(chunk_size=3000, chunk_overlap=400)
-        Settings.llm = Ollama(model=self.model, request_timeout=240.0, context_window=8192)
+        Settings.llm = Ollama(model=self.model, request_timeout=240.0, context_window=8192, base_url=self.ollama_base_url)
     
     def _setup_storage(self):
         self.client = chromadb.PersistentClient(path=self.db_path)
@@ -191,8 +193,16 @@ class DocumentIndexer:
                         structure = extract_structure(doc.text)
                         if structure:
                             print(f"✅ Extracted {len(structure)} structural elements")
-                    
-                    self.index.insert(doc)
+                            # Create structured documents
+                            structured_documents = self.create_structured_documents(structure,file_path=doc.metadata.get('file_path'))
+                            print(f"➡️ Created {len(structured_documents)} structured documents for {doc.metadata.get('file_name', 'Unknown')}")
+                            # Insert each structured document individually
+                            for j, struct_doc in enumerate(structured_documents, 1):
+                                print(f"   Inserting structured doc {j}/{len(structured_documents)}: {struct_doc.metadata.get('hierarchy_path', 'N/A')}")
+                                self.index.insert(struct_doc)
+                    else:
+                        self.index.insert(doc)
+                        
                     self._mark_file_complete(doc.metadata.get('file_path'))
                 except Exception as e:
                     print(f"Failed to process {doc.metadata.get('file_name', 'Unknown')}: {e}")
@@ -372,7 +382,7 @@ class DocumentIndexer:
         print(f"Deleted {deleted_count} records for file: {file_path}")
         return deleted_count > 0
 
-    def create_structured_documents(self, structure, parent_path="", parent_content=""):
+    def create_structured_documents(self, structure, parent_path="", parent_content="", file_path=""):
         """Create documents with hierarchical structure and metadata"""
         documents = []
         
@@ -412,7 +422,9 @@ class DocumentIndexer:
                         'hierarchy_path': current_path,
                         'level': len(current_path.split('/')) if current_path else 1,
                         'parent_path': parent_path,
-                        'has_subsections': bool(item.get('children') or item.get('parts') or item.get('divisions') or item.get('subdivisions') or item.get('sections'))
+                        'has_subsections': bool(item.get('children') or item.get('parts') or item.get('divisions') or item.get('subdivisions') or item.get('sections')),
+                        'file_path': file_path,
+                        'file_name': os.path.basename(file_path) if file_path else ''
                     }
                 )
                 documents.append(doc)
@@ -433,7 +445,8 @@ class DocumentIndexer:
                 nested_docs = self.create_structured_documents(
                     nested_items, 
                     current_path, 
-                    full_content
+                    full_content,
+                    file_path
                 )
                 documents.extend(nested_docs)
         

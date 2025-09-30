@@ -26,17 +26,6 @@ def ingest_structured_content(markdown_file, db_path="./structured_db", model="g
     
     print(f"Created {len(documents)} structured documents")
     
-    # Clean up corrupted database if needed
-    import shutil
-    if os.path.exists(db_path):
-        try:
-            # Test if database is accessible
-            test_indexer = DocumentIndexer(target_dir="", db_path=db_path, model=model)
-            test_indexer = None  # Clean up
-        except Exception as e:
-            if "_type" in str(e) or "KeyError" in str(e):
-                print(f"Corrupted database detected, removing: {db_path}")
-                shutil.rmtree(db_path)
     
     # Initialize indexer
     indexer = DocumentIndexer(target_dir="", db_path=db_path, model=model)

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   streamlit:
     build: .
@@ -11,3 +9,10 @@ services:
     environment:
       - PYTHONPATH=/app
     command: streamlit run streamlit_app.py --server.address 0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
