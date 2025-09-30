@@ -18,6 +18,9 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Search History**: Collapsible history with knowledge base and model tracking
 - **Web Interface**: Enhanced Streamlit frontend with improved UX
 - **CLI Tools**: Document indexing, structure extraction, and database administration
+- **Docker Support**: Containerized deployment with GPU support
+- **Persistent Configuration**: Server URLs and preferences saved automatically
+- **Structure Extraction**: JSON output for document hierarchy analysis
 
 ## Prerequisites
 
@@ -34,8 +37,17 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 
 ## Installation
 
+### Local Installation
 ```bash
 pip install -r requirements.txt
+```
+
+### Docker Installation
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+
+# Access at http://localhost:8501
 ```
 
 ## Usage
@@ -52,32 +64,17 @@ streamlit run streamlit_app.py
 ./index_doc_cli.py -t /path/to/docs [-d db_path] [-m model] [--sync]
 ```
 
+**Structure Extraction**
+```bash
+# Extract document structure to JSON
+python structure_extractor.py input.md [output.json]
+```
+
 **Database Administration**
 ```bash
 ./admin_cli.py summaries [db_path] [--model model]
 ./admin_cli.py stats [db_path] [--model model]
 ./admin_cli.py clear-db [db_path]
-```
-
-**AI Workflow - Complete Pipeline**
-```bash
-# Process single file: convert → extract → ingest
-./ai_workflow.py document.pdf [db_path] [model]
-
-# Batch process directory
-./batch_workflow.py /path/to/docs [db_path] [model]
-
-# Query workflow database
-./workflow_query.py "What are the requirements?" [db_path] [model]
-```
-
-**Structure Testing & Validation**
-```bash
-# Compare structure extraction methods
-python test/test_structure_comparison.py document.md
-
-# Validate against JSON schema
-# Outputs: mse_output.json, dae_output.json with schema validation
 ```
 
 **Structured Document Processing**
@@ -90,9 +87,6 @@ python test/test_structure_comparison.py document.md
 
 # Query with structure awareness
 ./structured_ingest.py query "What are share transfer requirements?" [db_path]
-
-# Test structure extraction consistency
-python test/test_structure_comparison.py document.md
 ```
 
 **Model Examples**
@@ -101,6 +95,41 @@ python test/test_structure_comparison.py document.md
 ./index_doc_cli.py -t /docs --model llama3.2:3b
 ./index_doc_cli.py -t /docs --model qwen2.5:7b
 ./admin_cli.py summaries --model deepseek-r1:14b
+```
+
+## Configuration
+
+The application uses `config.json` for persistent settings:
+
+```json
+{
+  "embed_base_url": "http://localhost:11434",
+  "ollama_base_url": "http://localhost:11434",
+  "default_model": "deepseek-r1:14b",
+  "default_kb": "default"
+}
+```
+
+- **Server URLs**: Configure embedding and Ollama server endpoints
+- **Default Model**: Auto-select preferred model on startup
+- **Default KB**: Remember last used knowledge base
+- **Auto-Save**: Settings persist between sessions
+
+## Docker Deployment
+
+### Features
+- **GPU Support**: NVIDIA GPU acceleration for faster processing
+- **Pre-cached Models**: Docling models downloaded during build
+- **Volume Persistence**: Data and config preserved between runs
+- **Network Tools**: Built-in utilities for troubleshooting
+
+### Commands
+```bash
+# Standard deployment
+docker-compose up --build
+
+# With GPU support (requires nvidia-docker)
+docker-compose up --build
 ```
 
 ## Dynamic Structure Detection
@@ -154,8 +183,8 @@ python test/test_structure_comparison.py document.md
 ## Architecture
 
 - **DocumentIndexer**: Core class with automatic legal document detection and structure extraction
-- **Ollama Backend**: Local LLM inference with model flexibility
-- **Docling Integration**: Advanced document parsing for multiple formats
+- **Ollama Backend**: Local LLM inference with configurable server URLs
+- **Docling Integration**: Advanced document parsing with pre-cached models
 - **Enhanced Search**: Sentence-first keyword search with word fallback and vector search cascade
 - **Smart Chunking**: Adaptive chunking based on document size
 - **Auto-Recovery**: Generates missing summaries automatically
@@ -163,28 +192,30 @@ python test/test_structure_comparison.py document.md
 - **Legal Document Auto-Detection**: Automatic pattern recognition for legal document structures
 - **Real-time Feedback**: Live processing output with line-by-line updates
 - **Multi-KB Support**: Multiple knowledge base management with context tracking
-- **Enhanced UI**: Collapsible search history with knowledge base and model information
+- **Enhanced UI**: Collapsible search history and server configuration
 - **Content Extraction**: Markdown cleaning and content preservation
 - **Structure Validation**: JSON schema validation and extraction method comparison
-- **Simple CLI**: Document indexing, structure extraction, and administration tools
+- **Persistent Config**: Automatic saving of user preferences and server settings
 
 ## File Structure
 
 ```
-├── streamlit_app.py              # Web interface
+├── streamlit_app.py              # Web interface with persistent config
 ├── index_doc_cli.py              # Document indexing CLI
 ├── admin_cli.py                  # Database administration CLI
 ├── document_indexer.py           # Core DocumentIndexer class
 ├── structure_detect_n_extract.py # Hierarchical structure extraction and detection
+├── structure_extractor.py        # JSON structure extraction tool
 ├── extract_to_text.py            # Structure to text conversion
 ├── structured_ingest.py          # Structured RAG ingestion
+├── extraction_patterns.py        # Document type classification patterns
 ├── test/                         # Testing utilities
 │   ├── test_structure_comparison.py  # Structure extraction testing
 │   └── structure_schema.json         # JSON schema for structure validation
-├── ai_workflow.py                # Complete AI workflow pipeline
-├── batch_workflow.py             # Batch processing workflow
-├── workflow_query.py             # Workflow database querying
+├── docker-compose.yml            # Docker deployment configuration
+├── Dockerfile                    # Container build instructions
+├── config.json                   # Persistent application configuration
 ├── requirements.txt              # Dependencies
 ├── README.md                    # This file
 └── chroma_db/                   # Default ChromaDB storage
-``
+```
