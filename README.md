@@ -8,12 +8,15 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Local Embeddings**: Uses nomic-embed-text for embeddings
 - **Persistent Storage**: ChromaDB for vector storage
 - **Advanced Parsing**: Docling for PDF, Word, and complex document formats
-- **Smart Search**: Keyword, section, and vector search with fallbacks
+- **Smart Search**: Sentence-first keyword search with word fallback, section, and vector search
 - **Large Document Support**: Smart chunking for large files
 - **Auto-Summary Generation**: Automatically creates summaries when missing
 - **Structured Document Processing**: Hierarchical extraction and RAG ingestion
-- **Legal Document Support**: Schedule/Part/Division/Subdivision/Section hierarchy
-- **Web Interface**: Streamlit frontend
+- **Legal Document Auto-Detection**: Automatic detection and structure extraction for legal documents
+- **Real-time Processing**: Live output streaming during document processing
+- **Multiple Knowledge Bases**: Create and manage separate knowledge bases
+- **Search History**: Collapsible history with knowledge base and model tracking
+- **Web Interface**: Enhanced Streamlit frontend with improved UX
 - **CLI Tools**: Document indexing, structure extraction, and database administration
 
 ## Prerequisites
@@ -132,9 +135,10 @@ python test/test_structure_comparison.py document.md
 
 ## Search Modes
 
-- **Default**: Keyword → Summary → Vector search cascade
+- **Default**: Sentence-first keyword → Word fallback → Vector search cascade
 - **Direct**: Pure vector search only
 - **Section Search**: Direct section number matching
+- **Legal Document Search**: Structure-aware search for legal documents
 
 ## Model Support
 
@@ -149,14 +153,17 @@ python test/test_structure_comparison.py document.md
 
 ## Architecture
 
-- **DocumentIndexer**: Core class handling all indexing, querying, and large document processing
+- **DocumentIndexer**: Core class with automatic legal document detection and structure extraction
 - **Ollama Backend**: Local LLM inference with model flexibility
 - **Docling Integration**: Advanced document parsing for multiple formats
-- **Multi-stage Search**: Keyword → Summary → Vector search cascade with section detection
+- **Enhanced Search**: Sentence-first keyword search with word fallback and vector search cascade
 - **Smart Chunking**: Adaptive chunking based on document size
 - **Auto-Recovery**: Generates missing summaries automatically
 - **Structured Processing**: Hierarchical document extraction with metadata
-- **Legal Document Support**: Schedule (5A, 5B), Part, Division, Subdivision, Section hierarchy
+- **Legal Document Auto-Detection**: Automatic pattern recognition for legal document structures
+- **Real-time Feedback**: Live processing output with line-by-line updates
+- **Multi-KB Support**: Multiple knowledge base management with context tracking
+- **Enhanced UI**: Collapsible search history with knowledge base and model information
 - **Content Extraction**: Markdown cleaning and content preservation
 - **Structure Validation**: JSON schema validation and extraction method comparison
 - **Simple CLI**: Document indexing, structure extraction, and administration tools
@@ -179,9 +186,5 @@ python test/test_structure_comparison.py document.md
 ├── workflow_query.py             # Workflow database querying
 ├── requirements.txt              # Dependencies
 ├── README.md                    # This file
-├── chroma_db/                   # Default ChromaDB storage
-├── large_doc_db/               # Large document ChromaDB storage
-├── structured_db/              # Structured document storage
-├── workflow_db/                # AI workflow database storage
-└── batch_db/                   # Batch processing database storage
-```
+└── chroma_db/                   # Default ChromaDB storage
+``
