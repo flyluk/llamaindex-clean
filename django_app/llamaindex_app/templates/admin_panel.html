@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>⚙️ Database Administration</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <h4>📚 Create New Knowledge Base</h4>
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                <input type="text" class="form-control" name="kb_name" placeholder="e.g., legal, medical, research">
+            </div>
+            <button type="submit" class="btn btn-primary">Create Knowledge Base</button>
+        </form>
+    </div>
+    
+    <div class="col-md-6">
+        <h4>📊 Database Statistics</h4>
+        <button class="btn btn-info" onclick="showStats()">Show Statistics</button>
+        <button class="btn btn-success" onclick="showStatus()">Knowledge Status</button>
+        <button class="btn btn-danger" onclick="deleteDB()">Delete Database</button>
+        
+        <div id="statsResult" class="mt-3" style="display:none;">
+            <div class="card">
+                <div class="card-header"><i class="bi bi-bar-chart"></i> Statistics</div>
+                <div class="card-body">
+                    <strong>Documents:</strong> <span id="docCount">Loading...</span><br>
+                    <strong>Knowledge Base:</strong> <span id="kbName">Loading...</span><br>
+                    <strong>Database Path:</strong> <span id="dbPath">Loading...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="statusResult" class="mt-3" style="display:none;">
+            <div class="card">
+                <div class="card-header"><i class="bi bi-list-check"></i> Knowledge Base Status</div>
+                <div class="card-body">
+                    <div id="statusContent" class="markdown-content" style="background-color: #0d1117; color: #e6edf3; padding: 1rem; border-radius: 6px; line-height: 1.6;">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showStats() {
+    $('#statsResult').show();
+    $.post('/get-stats/', {
+        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+    }, function(data) {
+        if (data.success) {
+            $('#docCount').text(data.doc_count);
+            $('#kbName').text(data.kb_name);
+            $('#dbPath').text(data.db_path);
+        } else {
+            $('#docCount').text('Error: ' + data.error);
+        }
+    });
+}
+
+function showStatus() {
+    $('#statusResult').show();
+    $.post('/get-status/', {
+        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+    }, function(data) {
+        if (data.success) {
+            const status = data.status_data;
+            let content = `# Knowledge Base Status\n\n`;
+            content += `**Database Path:** ${status.db_path}\n`;
+            content += `**Model:** ${status.model}\n`;
+            content += `**Documents:** ${status.doc_count}, **Status Records:** ${status.status_count}\n\n`;
+            content += `## Processing Status\n\n`;
+            content += `- **Processed Files:** ${status.processed_files_count}\n`;
+            content += `- **Completed Files:** ${status.completed_files_count}\n\n`;
+            
+            if (status.files && status.files.length > 0) {
+                content += `## File Details\n\n`;
+                content += `| File | Status |\n|------|--------|\n`;
+                status.files.forEach(file => {
+                    const fileStatus = file.completed ? '✅ Complete' : '⚠️ Partial';
+                    content += `| ${file.name} | ${fileStatus} |\n`;
+                });
+            }
+            
+            $('#statusContent').html(marked.parse(content));
+        } else {
+            $('#statusContent').text('Error: ' + data.error);
+        }
+    });
+}
+
+function deleteDB() {
+    if (confirm('⚠️ Are you sure you want to delete the current database?')) {
+        if (confirm('🚨 This action cannot be undone! All documents will be permanently deleted. Continue?')) {
+            $.post('/delete-db/', {
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }, function(data) {
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                    location.reload();
+                } else {
+                    alert('❌ Error: ' + data.error);
+                }
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+<head>
+    <title>LlamaIndex Document Search</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #e6edf3; }
+        .navbar { background: linear-gradient(135deg, #1f2937, #374151) !important; border-bottom: 1px solid #30363d; }
+        .card { background-color: #161b22; border: 1px solid #30363d; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .card-header { background: linear-gradient(135deg, #21262d, #30363d); border-bottom: 1px solid #30363d; font-weight: 600; }
+        .list-group-item { background-color: #21262d; border-color: #30363d; color: #e6edf3; }
+        .list-group-item:hover { background-color: #30363d; }
+        .list-group-item.active { background: linear-gradient(135deg, #0969da, #1f6feb); border-color: #1f6feb; }
+        .form-control, .form-select { background-color: #21262d; border-color: #30363d; color: #e6edf3; }
+        .form-control:focus, .form-select:focus { background-color: #21262d; border-color: #1f6feb; color: #e6edf3; box-shadow: 0 0 0 0.2rem rgba(31,111,235,0.25); }
+        .btn-primary { background: linear-gradient(135deg, #0969da, #1f6feb); border-color: #1f6feb; }
+        .btn-primary:hover { background: linear-gradient(135deg, #0860ca, #1f6feb); }
+        .alert-success { background-color: #0f5132; border-color: #0a3622; color: #75b798; }
+        .alert-danger { background-color: #58151c; border-color: #842029; color: #ea868f; }
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 { color: #58a6ff; margin-top: 1.5em; }
+        .markdown-content h4, .markdown-content h5, .markdown-content h6 { color: #79c0ff; }
+        .markdown-content code { background-color: #161b22; color: #f85149; padding: 2px 4px; border-radius: 3px; }
+        .markdown-content pre { background-color: #0d1117; border: 1px solid #30363d; padding: 16px; border-radius: 6px; overflow-x: auto; }
+        .markdown-content blockquote { border-left: 4px solid #30363d; padding-left: 16px; color: #8b949e; }
+        .markdown-content ul, .markdown-content ol { padding-left: 2em; }
+        .markdown-content li { margin-bottom: 0.25em; }
+        .markdown-content strong { color: #f0f6fc; }
+        .markdown-content em { color: #f0f6fc; font-style: italic; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-robot"></i> LlamaIndex Document Search
+            </a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/"><i class="bi bi-search"></i> Search</a>
+                <a class="nav-link" href="/models/"><i class="bi bi-cpu"></i> Models</a>
+                <a class="nav-link" href="/admin_panel/"><i class="bi bi-gear"></i> Admin</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        {% csrf_token %}
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        📚 Knowledge Bases
+                    </div>
+                    <div class="card-body">
+                        {% for kb_name, kb_path in knowledge_bases.items %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="kb_selection" id="kb_{{ kb_name }}" value="{{ kb_name }}" {% if kb_name == config.default_kb %}checked{% endif %}>
+                                <label class="form-check-label" for="kb_{{ kb_name }}">
+                                    📁 {{ kb_name|title }}
+                                </label>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header">
+                        🤖 Model
+                    </div>
+                    <div class="card-body">
+                        <select class="form-select" id="modelSelect">
+                            {% for model in installed_models %}
+                                <option {% if model == config.default_model %}selected{% endif %}>{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#configCollapse" style="cursor: pointer;">
+                        <span>🔧 Server Configuration</span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary me-2" id="editUrlBtn" onclick="event.stopPropagation();">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <i class="bi bi-chevron-down"></i>
+                        </div>
+                    </div>
+                    <div class="collapse" id="configCollapse">
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <label class="form-label">🔗 Embed URL:</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" id="embedUrl" value="{{ config.embed_base_url }}" readonly>
+                                    <button class="btn btn-success d-none" id="saveEmbedBtn"><i class="bi bi-check"></i></button>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label">🔗 Ollama URL:</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" id="ollamaUrl" value="{{ config.ollama_base_url }}" readonly>
+                                    <button class="btn btn-success d-none" id="saveOllamaBtn"><i class="bi bi-check"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header" data-bs-toggle="collapse" data-bs-target="#historyCollapse" style="cursor: pointer;">
+                        🕒 Search History (<span id="historyCount">0</span>)
+                        <i class="bi bi-chevron-down float-end"></i>
+                    </div>
+                    <div class="collapse" id="historyCollapse">
+                        <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                            <div id="historyContent">
+                                <small class="text-muted">No search history yet</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-9">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    $(document).ready(function() {
+        $('#modelSelect').change(function() {
+            const selectedModel = $(this).val();
+            $.post('/change-model/', {
+                'model': selectedModel,
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }).done(function() {
+                location.reload();
+            });
+        });
+        
+        $('#editUrlBtn').click(function() {
+            $('#embedUrl, #ollamaUrl').prop('readonly', false);
+            $('#saveEmbedBtn, #saveOllamaBtn').removeClass('d-none');
+            $(this).addClass('d-none');
+        });
+        
+        $('#saveEmbedBtn').click(function() {
+            const embedUrl = $('#embedUrl').val();
+            $.post('/update-config/', {
+                'embed_base_url': embedUrl,
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }).done(function() {
+                $('#embedUrl').prop('readonly', true);
+                $('#saveEmbedBtn').addClass('d-none');
+                if ($('#saveOllamaBtn').hasClass('d-none')) {
+                    $('#editUrlBtn').removeClass('d-none');
+                }
+            });
+        });
+        
+        $('#saveOllamaBtn').click(function() {
+            const ollamaUrl = $('#ollamaUrl').val();
+            $.post('/update-config/', {
+                'ollama_base_url': ollamaUrl,
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }).done(function() {
+                $('#ollamaUrl').prop('readonly', true);
+                $('#saveOllamaBtn').addClass('d-none');
+                if ($('#saveEmbedBtn').hasClass('d-none')) {
+                    $('#editUrlBtn').removeClass('d-none');
+                }
+            });
+        });
+        
+        $('input[name="kb_selection"]').change(function() {
+            const selectedKb = $(this).val();
+            $.post('/change-kb/', {
+                'kb_name': selectedKb,
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }).done(function() {
+                location.reload();
+            });
+        });
+        
+        loadSearchHistory();
+    });
+    
+    function loadSearchHistory() {
+        $.get('/load-history/').done(function(data) {
+            if (data.success) {
+                const history = data.history;
+                $('#historyCount').text(history.length);
+                
+                if (history.length === 0) {
+                    $('#historyContent').html('<small class="text-muted">No search history yet</small>');
+                    return;
+                }
+                
+                const grouped = {};
+                history.forEach(entry => {
+                    const date = new Date(entry.timestamp).toDateString();
+                    if (!grouped[date]) grouped[date] = [];
+                    grouped[date].push(entry);
+                });
+                
+                let html = '';
+                Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a)).forEach(date => {
+                    html += `<div class="mb-2">`;
+                    html += `<small class="text-muted fw-bold">${date}</small>`;
+                    grouped[date].forEach(entry => {
+                        const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+                        const shortQuery = entry.query.length > 25 ? entry.query.substring(0, 25) + '...' : entry.query;
+                        html += `<div class="d-flex justify-content-between align-items-center py-1 px-2 rounded mb-1" style="background-color: #21262d; cursor: pointer;" onclick="loadHistoryEntry('${entry.timestamp}')">`;;
+                        html += `<small>${time}: ${shortQuery}</small>`;
+                        html += `<small class="text-muted">${entry.kb}</small>`;
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                });
+                
+                $('#historyContent').html(html);
+            }
+        });
+    }
+    
+    function addToHistory(query, result, kb, model) {
+        $.get('/load-history/').done(function(data) {
+            const history = data.success ? data.history : [];
+            const entry = {
+                timestamp: new Date().toISOString(),
+                query: query,
+                result: result,
+                kb: kb,
+                model: model
+            };
+            history.unshift(entry);
+            const trimmedHistory = history.slice(0, 50);
+            
+            $.post('/save-history/', {
+                'history': JSON.stringify(trimmedHistory),
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }).done(function() {
+                loadSearchHistory();
+            });
+        });
+    }
+    
+    function loadHistoryEntry(timestamp) {
+        $.get('/load-history/').done(function(data) {
+            if (data.success) {
+                const entry = data.history.find(h => h.timestamp === timestamp);
+                if (entry && typeof window.showHistoryResult === 'function') {
+                    window.showHistoryResult(entry.query, entry.result, entry.kb, entry.model);
+                }
+            }
+        });
+    }
+    </script>
+</body>
+</html>

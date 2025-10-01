@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>🤖 Ollama Models</h2>
+
+<button class="btn btn-primary mb-3" onclick="location.reload()">🔄 Refresh Models</button>
+
+<div class="row">
+    <div class="col-md-6">
+        <h4>📥 Available Models</h4>
+        {% for model in library_models %}
+        <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+            <span>
+                {{ model }} - 
+                {% if model in installed_models %}
+                    ✅ Installed
+                {% else %}
+                    ⬇️ Available
+                {% endif %}
+            </span>
+            {% if model not in installed_models %}
+            <button class="btn btn-sm btn-outline-primary" onclick="pullModel('{{ model }}')">Pull</button>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="col-md-6">
+        <h4>📋 Installed Models</h4>
+        {% for model in installed_models %}
+        <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+            <span>✅ {{ model }}</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteModel('{{ model }}')">Delete</button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function pullModel(modelName) {
+    if (confirm(`Pull model ${modelName}?`)) {
+        $.post('/pull_model/', {
+            'model_name': modelName,
+            'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+        }, function(data) {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    }
+}
+
+function deleteModel(modelName) {
+    if (confirm(`Delete model ${modelName}?`)) {
+        $.post('/delete_model/', {
+            'model_name': modelName,
+            'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+        }, function(data) {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    }
+}
+</script>
+{% csrf_token %}
+{% endblock %}

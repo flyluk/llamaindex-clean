@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>🔍 Search Documents</h2>
+        <form id="searchForm">
+            {% csrf_token %}
+            <div class="mb-3">
+                <input type="text" class="form-control" name="query" placeholder="What are you looking for?" required>
+            </div>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="directVector" name="direct_vector">
+                    <label class="form-check-label" for="directVector">
+                        🎯 Direct vector search (skip keyword search)
+                    </label>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+        
+        <div id="searchResult" class="mt-4" style="display:none;">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-chat-dots"></i> Response
+                </div>
+                <div class="card-body">
+                    <div id="resultContent" class="markdown-content p-3" style="background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; line-height: 1.6;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <h4>📁 Upload Documents</h4>
+        <form id="uploadForm">
+            {% csrf_token %}
+            <div class="mb-3">
+                <input type="file" class="form-control" id="fileInput" name="files" multiple accept=".pdf,.txt,.md,.docx,.doc">
+            </div>
+            <button type="submit" class="btn btn-success" id="uploadBtn">Upload & Process</button>
+        </form>
+        
+        <div id="uploadProgress" class="mt-3" style="display:none;">
+            <div class="progress mb-2">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="progressBar"></div>
+            </div>
+            <small class="text-muted" id="progressText">Preparing upload...</small>
+        </div>
+    </div>
+</div>
+
+<script>
+$('#searchForm').submit(function(e) {
+    e.preventDefault();
+    const query = $('input[name="query"]').val();
+    
+    $('#resultContent').html('<i class="bi bi-hourglass-split"></i> Searching...');
+    $('#searchResult').show();
+    
+    $.post('/search/', {
+        'query': query,
+        'direct_vector': $('#directVector').is(':checked'),
+        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+    }, function(data) {
+        if (data.success) {
+            $('#resultContent').html(marked.parse(data.result));
+            // Add to history
+            const kb = $('input[name="kb_selection"]:checked').val() || 'default';
+            const model = $('#modelSelect').val();
+            addToHistory(query, data.result, kb, model);
+        } else {
+            $('#resultContent').html('<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Error: ' + data.error + '</div>');
+        }
+    }).fail(function() {
+        $('#resultContent').html('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Connection error. Please try again.</div>');
+    });
+});
+
+$('#uploadForm').submit(function(e) {
+    e.preventDefault();
+    const fileInput = $('#fileInput')[0];
+    
+    if (!fileInput.files.length) {
+        alert('Please select files to upload');
+        return;
+    }
+    
+    const formData = new FormData();
+    for (let i = 0; i < fileInput.files.length; i++) {
+        formData.append('files', fileInput.files[i]);
+    }
+    formData.append('csrfmiddlewaretoken', $('[name=csrfmiddlewaretoken]').val());
+    
+    $('#uploadBtn').prop('disabled', true).text('Processing...');
+    $('#uploadProgress').show();
+    $('#progressBar').css('width', '10%');
+    $('#progressText').text('Uploading files...');
+    
+    $.ajax({
+        url: '/upload/',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        xhr: function() {
+            const xhr = new window.XMLHttpRequest();
+            xhr.upload.addEventListener('progress', function(evt) {
+                if (evt.lengthComputable) {
+                    const percentComplete = (evt.loaded / evt.total) * 50; // Upload is 50% of total
+                    $('#progressBar').css('width', percentComplete + '%');
+                    $('#progressText').text(`Uploading... ${Math.round(percentComplete)}%`);
+                }
+            }, false);
+            return xhr;
+        },
+        success: function(data) {
+            $('#progressBar').css('width', '100%');
+            $('#progressText').text('Upload completed successfully!');
+            setTimeout(() => {
+                $('#uploadProgress').hide();
+                $('#uploadBtn').prop('disabled', false).text('Upload & Process');
+                $('#fileInput').val('');
+                location.reload();
+            }, 2000);
+        },
+        error: function() {
+            $('#progressBar').removeClass('progress-bar-animated').addClass('bg-danger');
+            $('#progressText').text('Upload failed. Please try again.');
+            $('#uploadBtn').prop('disabled', false).text('Upload & Process');
+        }
+    });
+});
+
+// Function to show history result
+window.showHistoryResult = function(query, result, kb, model) {
+    $('input[name="query"]').val(query);
+    $('#resultContent').html(marked.parse(result));
+    $('#searchResult').show();
+    
+    // Show history info
+    const historyInfo = `<div class="alert alert-info"><i class="bi bi-clock-history"></i> From history - KB: ${kb}, Model: ${model}</div>`;
+    $('#searchResult .card-body').prepend(historyInfo);
+};
+</script>
+{% endblock %}

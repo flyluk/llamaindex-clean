@@ -16,7 +16,9 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Real-time Processing**: Live output streaming during document processing
 - **Multiple Knowledge Bases**: Create and manage separate knowledge bases
 - **Search History**: Collapsible history with knowledge base and model tracking
+- **JSON File Persistence**: Search history saved to JSON file instead of localStorage
 - **Web Interface**: Enhanced Streamlit frontend with improved UX
+- **Django Alternative**: Modern Django web interface with dark theme
 - **CLI Tools**: Document indexing, structure extraction, and database administration
 - **Docker Support**: Containerized deployment with GPU support
 - **Persistent Configuration**: Server URLs and preferences saved automatically
@@ -53,8 +55,17 @@ docker-compose up --build
 ## Usage
 
 ### Web Interface
+
+**Streamlit (Original)**
 ```bash
 streamlit run streamlit_app.py
+```
+
+**Django (Alternative)**
+```bash
+cd django_app
+python manage.py runserver
+# Access at http://localhost:8000
 ```
 
 ### CLI Tools
@@ -114,6 +125,7 @@ The application uses `config.json` for persistent settings:
 - **Default Model**: Auto-select preferred model on startup
 - **Default KB**: Remember last used knowledge base
 - **Auto-Save**: Settings persist between sessions
+- **Search History**: Stored in `history.json` with 50-entry limit
 
 ## Docker Deployment
 
@@ -165,7 +177,7 @@ docker-compose up --build
 ## Search Modes
 
 - **Default**: Sentence-first keyword → Word fallback → Vector search cascade
-- **Direct**: Pure vector search only
+- **Direct**: Pure vector search only (checkbox option in web interface)
 - **Section Search**: Direct section number matching
 - **Legal Document Search**: Structure-aware search for legal documents
 
@@ -200,7 +212,14 @@ docker-compose up --build
 ## File Structure
 
 ```
-├── streamlit_app.py              # Web interface with persistent config
+├── streamlit_app.py              # Original Streamlit web interface
+├── django_app/                   # Django web interface (alternative)
+│   ├── manage.py                 # Django management script
+│   ├── llamaindex_app/           # Main Django application
+│   │   ├── views.py              # Django views with DocumentIndexer integration
+│   │   ├── urls.py               # URL routing
+│   │   └── templates/            # HTML templates with dark theme
+│   └── requirements.txt          # Django-specific dependencies
 ├── index_doc_cli.py              # Document indexing CLI
 ├── admin_cli.py                  # Database administration CLI
 ├── document_indexer.py           # Core DocumentIndexer class
@@ -215,6 +234,7 @@ docker-compose up --build
 ├── docker-compose.yml            # Docker deployment configuration
 ├── Dockerfile                    # Container build instructions
 ├── config.json                   # Persistent application configuration
+├── history.json                  # Search history (JSON file persistence)
 ├── requirements.txt              # Dependencies
 ├── README.md                    # This file
 └── chroma_db/                   # Default ChromaDB storage

@@ -52,9 +52,9 @@ def add_to_history(query, result, kb, model):
     save_search_history(history)
 
 @st.cache_resource
-def get_ollama_models():
+def get_ollama_models(ollama_url="http://localhost:11434"):
     try:
-        response = requests.get("http://localhost:11434/api/tags", timeout=5)
+        response = requests.get(f"{ollama_url}/api/tags", timeout=5)
         if response.status_code == 200:
             models = [model["name"] for model in response.json()["models"]]
             return models if models else ["deepseek-r1:14b"]
@@ -96,6 +96,13 @@ config = load_config()
 
 st.title("🦙 LlamaIndex Document Search")
 
+# Show last action notification
+if st.session_state.get('last_action'):
+    st.info(st.session_state.last_action)
+    if st.button("Clear notification"):
+        st.session_state.last_action = None
+        st.rerun()
+
 # Display Python version for verification
 st.sidebar.markdown(f"**Python:** {sys.version.split()[0]}")
 
@@ -135,7 +142,7 @@ db_path = kb_options[selected_kb]
 st.sidebar.caption(f"Path: {db_path}")
 
 # Set model from config with fallback
-available_models = get_ollama_models()
+available_models = get_ollama_models(config["ollama_base_url"])
 config_model = config.get("default_model", "deepseek-r1:14b")
 model_index = 0
 if config_model in available_models:
@@ -195,8 +202,12 @@ with st.sidebar.expander(f"🕒 Search History ({len(history)} queries)", expand
     else:
         st.info("No search history yet")
 
+# Initialize active tab in session state
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = 0
+
 # Main interface
-tab1, tab2, tab3 = st.tabs(["🔍 Search", "📁 Upload", "⚙️ Admin"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔍 Search", "📁 Upload", "⚙️ Admin", "🤖 Models"])
 
 with tab1:
     col1, col2 = st.columns([3, 1])
@@ -355,3 +366,103 @@ with tab3:
             else:
                 st.info("No status information found")
             
+
+def get_ollama_library():
+    return [
+        "llama3.2:3b", "llama3.2:1b", "llama3.1:8b", "llama3.1:70b",
+        "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "qwen2.5:72b",
+        "deepseek-r1:1.5b", "deepseek-r1:7b", "deepseek-r1:8b", "deepseek-r1:14b", "deepseek-r1:32b",
+        "mistral:7b", "mixtral:8x7b", "codellama:7b", "codellama:13b",
+        "phi3:3.8b", "phi3:14b", "gemma2:2b", "gemma2:9b", "gemma2:27b",
+        "nomic-embed-text", "mxbai-embed-large", "all-minilm"
+    ]
+
+def pull_model_with_progress(model_name, ollama_url, progress_bar, status_text):
+    try:
+        response = requests.post(f"{ollama_url}/api/pull", json={"name": model_name}, stream=True, timeout=300)
+        if response.status_code == 200:
+            for line in response.iter_lines():
+                if line:
+                    data = json.loads(line.decode('utf-8'))
+                    if 'status' in data:
+                        status_text.text(data['status'])
+                    if 'completed' in data and 'total' in data:
+                        progress = data['completed'] / data['total']
+                        progress_bar.progress(progress)
+        return response
+    except Exception as e:
+        return None
+
+def pull_model(model_name, ollama_url):
+    try:
+        response = requests.post(f"{ollama_url}/api/pull", json={"name": model_name}, stream=True, timeout=300)
+        return response
+    except Exception as e:
+        return None
+
+def delete_model(model_name, ollama_url):
+    try:
+        response = requests.delete(f"{ollama_url}/api/delete", json={"name": model_name}, timeout=30)
+        return response
+    except Exception as e:
+        return None
+with tab4:
+    st.header("Ollama Models")
+    
+    # Global refresh button at top
+    if st.button("🔄 Refresh Models", type="primary"):
+        st.cache_resource.clear()
+        st.rerun()
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.subheader("📥 Available Models")
+        library_models = get_ollama_library()
+        installed_models = get_ollama_models(config["ollama_base_url"])
+        
+        for model in library_models:
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                status = "✅ Installed" if model in installed_models else "⬇️ Available"
+                st.write(f"{model} - {status}")
+            with col_b:
+                if model not in installed_models:
+                    if st.button("Pull", key=f"pull_{model}"):
+                        with st.spinner(f"Pulling {model}..."):
+                            response = pull_model(model, config["ollama_base_url"])
+                            if response and response.status_code == 200:
+                                st.success(f"Successfully pulled {model}")
+                                st.session_state.last_action = f"Pulled {model} - Check Models tab"
+                            else:
+                                st.error(f"Failed to pull {model}")
+    
+    with col2:
+        st.subheader("📋 Installed Models")
+        
+        for model in installed_models:
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                st.write(f"✅ {model}")
+            with col_b:
+                confirm_key = f"confirm_delete_{model}"
+                if st.session_state.get(confirm_key):
+                    col_c, col_d = st.columns(2)
+                    with col_c:
+                        if st.button("✓", key=f"confirm_{model}", type="primary", help="Confirm delete"):
+                            response = delete_model(model, config["ollama_base_url"])
+                            if response and response.status_code == 200:
+                                st.success(f"Deleted {model}")
+                                st.session_state.last_action = f"Deleted {model} - Check Models tab"
+                            else:
+                                st.error(f"Failed to delete {model}")
+                            st.session_state[confirm_key] = False
+                    with col_d:
+                        if st.button("✗", key=f"cancel_{model}", help="Cancel delete"):
+                            st.session_state[confirm_key] = False
+                            st.rerun()
+                else:
+                    if st.button("Delete", key=f"delete_{model}", type="secondary"):
+                        st.session_state[confirm_key] = True
+                        st.rerun()
+                        
