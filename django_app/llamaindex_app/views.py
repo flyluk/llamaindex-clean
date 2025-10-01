@@ -63,6 +63,25 @@ def get_knowledge_bases():
         if clean_name == 'chroma':
             clean_name = 'default'
         kb_options[clean_name] = db_dir
+    
+    # Create default chroma_db if no databases exist
+    if not kb_options and DocumentIndexer:
+        try:
+            config = load_config()
+            default_db_path = get_db_path('default')
+            indexer = DocumentIndexer(
+                target_dir="",
+                db_path=default_db_path,
+                model=config["default_model"],
+                embed_base_url=config["embed_base_url"],
+                ollama_base_url=config["ollama_base_url"]
+            )
+            indexer.load_or_create_index()
+            kb_options['default'] = default_db_path
+            print(f"Created default knowledge base at {default_db_path}")
+        except Exception as e:
+            print(f"Failed to create default knowledge base: {e}")
+    
     return kb_options
 
 def get_db_path(kb_name):

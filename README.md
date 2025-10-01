@@ -49,7 +49,7 @@ pip install -r requirements.txt
 # Build and run with Docker Compose
 docker-compose up --build
 
-# Access at http://localhost:8501
+# Access Django interface at http://localhost:8000
 ```
 
 ## Usage
@@ -130,6 +130,8 @@ The application uses `config.json` for persistent settings:
 ## Docker Deployment
 
 ### Features
+- **Django Interface**: Runs Django web interface by default (port 8000)
+- **Auto-initialization**: Creates default chroma_db on first startup
 - **GPU Support**: NVIDIA GPU acceleration for faster processing
 - **Pre-cached Models**: Docling models downloaded during build
 - **Volume Persistence**: Data and config preserved between runs
@@ -137,7 +139,7 @@ The application uses `config.json` for persistent settings:
 
 ### Commands
 ```bash
-# Standard deployment
+# Standard deployment (Django interface)
 docker-compose up --build
 
 # With GPU support (requires nvidia-docker)
