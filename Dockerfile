@@ -14,7 +14,14 @@ COPY . .
 # Pre-download docling models during build
 RUN docling-tools models download
 
+# Test docling conversion with a simple script
+RUN python -c "from docling.document_converter import DocumentConverter; converter = DocumentConverter(); print('Docling initialized successfully')"
+# Test chromadb functionality with a simple script
 RUN python -c "import chromadb;client = chromadb.Client();collection = client.create_collection('all-my-documents');collection.add(documents=['This is document1'], ids=['doc1']);results = collection.query(query_texts=['This is a query document'],n_results=1)"
+
+COPY b202412061.pdf .
+RUN python doc_converter.py markdown b202412061.pdf b202412061.md
+RUN rm b202412061.pdf b202412061.md
 
 EXPOSE 8000
 

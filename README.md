@@ -18,11 +18,13 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Search History**: Collapsible history with knowledge base and model tracking
 - **JSON File Persistence**: Search history saved to JSON file instead of localStorage
 - **Web Interface**: Enhanced Streamlit frontend with improved UX
-- **Django Alternative**: Modern Django web interface with dark theme
+- **Django Alternative**: Modern Django web interface with dark theme and progress indicators
+- **Model Management**: Visual progress bars for Ollama model pulling and deletion
 - **CLI Tools**: Document indexing, structure extraction, and database administration
 - **Docker Support**: Containerized deployment with GPU support
 - **Persistent Configuration**: Server URLs and preferences saved automatically
 - **Structure Extraction**: JSON output for document hierarchy analysis
+- **Error Handling**: Improved URL validation and Chrome DevTools compatibility
 
 ## Prerequisites
 
@@ -144,6 +146,9 @@ docker-compose up --build
 
 # With GPU support (requires nvidia-docker)
 docker-compose up --build
+
+# Test Docling PDF conversion
+python test_docling.py sample.pdf
 ```
 
 ## Dynamic Structure Detection
@@ -219,9 +224,10 @@ docker-compose up --build
 │   ├── manage.py                 # Django management script
 │   ├── llamaindex_app/           # Main Django application
 │   │   ├── views.py              # Django views with DocumentIndexer integration
-│   │   ├── urls.py               # URL routing
-│   │   └── templates/            # HTML templates with dark theme
+│   │   ├── urls.py               # URL routing with Chrome DevTools handler
+│   │   └── templates/            # HTML templates with progress bars
 │   └── requirements.txt          # Django-specific dependencies
+├── test_docling.py               # Docling PDF conversion test script
 ├── index_doc_cli.py              # Document indexing CLI
 ├── admin_cli.py                  # Database administration CLI
 ├── document_indexer.py           # Core DocumentIndexer class
@@ -235,7 +241,7 @@ docker-compose up --build
 │   └── structure_schema.json         # JSON schema for structure validation
 ├── docker-compose.yml            # Docker deployment configuration
 ├── Dockerfile                    # Container build instructions
-├── config.json                   # Persistent application configuration
+├── config.json                   # Persistent application configuration (URL validation)
 ├── history.json                  # Search history (JSON file persistence)
 ├── requirements.txt              # Dependencies
 ├── README.md                    # This file

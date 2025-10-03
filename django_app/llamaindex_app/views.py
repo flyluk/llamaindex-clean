@@ -223,6 +223,8 @@ def models_view(request):
     }
     return render(request, 'models.html', context)
 
+from django.http import StreamingHttpResponse
+
 @csrf_exempt
 @require_POST
 def pull_model(request):

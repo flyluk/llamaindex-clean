@@ -9,17 +9,25 @@
     <div class="col-md-6">
         <h4>📥 Available Models</h4>
         {% for model in library_models %}
-        <div class="d-flex justify-content-between align-items-center border-bottom py-2">
-            <span>
-                {{ model }} - 
-                {% if model in installed_models %}
-                    ✅ Installed
-                {% else %}
-                    ⬇️ Available
+        <div class="border-bottom py-2">
+            <div class="d-flex justify-content-between align-items-center">
+                <span>
+                    {{ model }} - 
+                    {% if model in installed_models %}
+                        ✅ Installed
+                    {% else %}
+                        ⬇️ Available
+                    {% endif %}
+                </span>
+                {% if model not in installed_models %}
+                <button class="btn btn-sm btn-outline-primary" onclick="pullModel('{{ model }}', this)">Pull</button>
                 {% endif %}
-            </span>
+            </div>
             {% if model not in installed_models %}
-            <button class="btn btn-sm btn-outline-primary" onclick="pullModel('{{ model }}')">Pull</button>
+            <div class="progress mt-2" id="progress-{{ model|cut:':' }}" style="display: none;">
+                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+            </div>
+            <small class="text-muted" id="status-{{ model|cut:':' }}" style="display: none;"></small>
             {% endif %}
         </div>
         {% endfor %}
@@ -37,16 +45,29 @@
 </div>
 
 <script>
-function pullModel(modelName) {
+function pullModel(modelName, buttonElement) {
     if (confirm(`Pull model ${modelName}?`)) {
+        const button = $(buttonElement);
+        const container = button.closest('.border-bottom');
+        const progress = container.find('.progress');
+        const status = container.find('.text-muted');
+        
+        button.prop('disabled', true).text('Pulling...');
+        progress.show();
+        status.show().text('Starting...');
+        
         $.post('/pull_model/', {
             'model_name': modelName,
             'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
         }, function(data) {
             if (data.success) {
-                alert(data.message);
-                location.reload();
+                progress.find('.progress-bar').css('width', '100%');
+                status.text('Complete!');
+                setTimeout(() => location.reload(), 1000);
             } else {
+                button.prop('disabled', false).text('Pull');
+                progress.hide();
+                status.hide();
                 alert('Error: ' + data.error);
             }
         });

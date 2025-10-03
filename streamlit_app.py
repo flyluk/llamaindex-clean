@@ -429,13 +429,16 @@ with tab4:
             with col_b:
                 if model not in installed_models:
                     if st.button("Pull", key=f"pull_{model}"):
-                        with st.spinner(f"Pulling {model}..."):
-                            response = pull_model(model, config["ollama_base_url"])
-                            if response and response.status_code == 200:
-                                st.success(f"Successfully pulled {model}")
-                                st.session_state.last_action = f"Pulled {model} - Check Models tab"
-                            else:
-                                st.error(f"Failed to pull {model}")
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        response = pull_model_with_progress(model, config["ollama_base_url"], progress_bar, status_text)
+                        if response and response.status_code == 200:
+                            st.success(f"Successfully pulled {model}")
+                            st.session_state.last_action = f"Pulled {model} - Check Models tab"
+                        else:
+                            st.error(f"Failed to pull {model}")
+                        progress_bar.empty()
+                        status_text.empty()
     
     with col2:
         st.subheader("📋 Installed Models")

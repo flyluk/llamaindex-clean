@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import path
+from django.http import HttpResponse
 from . import views
 
 urlpatterns = [
@@ -19,4 +20,5 @@ urlpatterns = [
     path('delete-db/', views.delete_db, name='delete_db'),
     path('save-history/', views.save_history, name='save_history'),
     path('load-history/', views.load_history, name='load_history'),
+    path('.well-known/appspecific/com.chrome.devtools.json', lambda r: HttpResponse(status=204)),
 ]
