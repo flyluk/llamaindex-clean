@@ -24,10 +24,12 @@
                 {% endif %}
             </div>
             {% if model not in installed_models %}
-            <div class="progress mt-2" id="progress-{{ model|cut:':' }}" style="display: none;">
-                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+            <div class="mt-2" id="loading-{{ model|cut:':' }}" style="display: none;">
+                <div class="spinner-border spinner-border-sm" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <small class="text-muted ms-2">Pulling model...</small>
             </div>
-            <small class="text-muted" id="status-{{ model|cut:':' }}" style="display: none;"></small>
             {% endif %}
         </div>
         {% endfor %}
@@ -49,25 +51,21 @@ function pullModel(modelName, buttonElement) {
     if (confirm(`Pull model ${modelName}?`)) {
         const button = $(buttonElement);
         const container = button.closest('.border-bottom');
-        const progress = container.find('.progress');
-        const status = container.find('.text-muted');
+        const loading = container.find('[id^="loading-"]');
         
         button.prop('disabled', true).text('Pulling...');
-        progress.show();
-        status.show().text('Starting...');
+        loading.show();
         
         $.post('/pull_model/', {
             'model_name': modelName,
             'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
         }, function(data) {
             if (data.success) {
-                progress.find('.progress-bar').css('width', '100%');
-                status.text('Complete!');
+                loading.find('small').text('Complete!');
                 setTimeout(() => location.reload(), 1000);
             } else {
                 button.prop('disabled', false).text('Pull');
-                progress.hide();
-                status.hide();
+                loading.hide();
                 alert('Error: ' + data.error);
             }
         });
