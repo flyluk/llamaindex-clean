@@ -224,7 +224,7 @@ class StructureDetector:
         md_headers = [h for h in headers if h['type'] == 'markdown']
         if md_headers:
             level_counts = Counter(h['level'] for h in md_headers)
-            patterns['markdown'] = {f'h{level}': f'^#{{{level}}}\s+(.+)$' 
+            patterns['markdown'] = {f'h{level}': f'^#{{{level}}}\\s+(.+)$' 
                                   for level in level_counts.keys()}
         
         return patterns
