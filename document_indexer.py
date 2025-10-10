@@ -1,4 +1,5 @@
 import os
+import site
 import chromadb
 from llama_index.core import VectorStoreIndex, Settings, StorageContext, Document
 from llama_index.core.node_parser import SentenceSplitter
@@ -6,8 +7,16 @@ from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from docling.document_converter import DocumentConverter
-from structure_detect_n_extract import extract_structure
+from structure_detect_n_extract import extract_structure, StructureDetector
 import re
+
+# Setup TensorRT environment
+site_packages = site.getsitepackages()[0]
+tensorrt_lib_path = os.path.join(site_packages, 'tensorrt_cu13_libs')
+if 'LD_LIBRARY_PATH' in os.environ:
+    os.environ['LD_LIBRARY_PATH'] = f"{tensorrt_lib_path}:{os.environ['LD_LIBRARY_PATH']}"
+else:
+    os.environ['LD_LIBRARY_PATH'] = tensorrt_lib_path
 
 try:
     from llama_index.core.evaluation import SemanticSimilarityEvaluator
@@ -16,31 +25,99 @@ except ImportError:
     EVALUATION_AVAILABLE = False
 
 class DocumentIndexer:
-    def __init__(self, target_dir="/mnt/c/users/flyluk/test", db_path="./chroma_db", model="gpt-oss:20b", embed_base_url="http://localhost:11434", ollama_base_url="http://localhost:11434"):
+    def __init__(self, target_dir="/mnt/c/users/flyluk/test", db_path="./chroma_db", model="gpt-oss:20b", base_url="http://localhost:11434", embed_url=None, api_key=None, embed_model="nomic-embed-text"):
         self.target_dir = target_dir
         self.db_path = db_path
         self.model = model
-        self.embed_base_url = embed_base_url
-        self.ollama_base_url = ollama_base_url
+        self.base_url = base_url
+        self.embed_url = embed_url or base_url
+        self.api_key = api_key
+        self.embed_model = embed_model
         self._setup_settings()
         self._setup_storage()
         
     def _setup_settings(self):
-        Settings.embed_model = OllamaEmbedding(
-            model_name="nomic-embed-text",
-            base_url=self.embed_base_url,
-            embed_batch_size=1
-        )
         Settings.node_parser = SentenceSplitter(chunk_size=3000, chunk_overlap=400)
-        Settings.llm = Ollama(model=self.model, request_timeout=240.0, context_window=8192, base_url=self.ollama_base_url)
+        
+        # Auto-detect service type based on URL and API key
+        is_azure = "azure" in self.embed_url.lower()
+        is_openai = self.api_key and not is_azure
+        
+        # Setup embeddings
+        if is_azure:
+            from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
+            Settings.embed_model = AzureOpenAIEmbedding(
+                api_key=self.api_key,
+                azure_endpoint=self.embed_url,
+                engine=self.embed_model,
+                api_version="2024-02-01"
+            )
+        elif is_openai:
+            from llama_index.embeddings.openai import OpenAIEmbedding
+            Settings.embed_model = OpenAIEmbedding(
+                api_key=self.api_key,
+                api_base=self.embed_url,
+                model=self.embed_model
+            )
+        else:
+            Settings.embed_model = OllamaEmbedding(
+                model_name=self.embed_model,
+                base_url=self.embed_url,
+                embed_batch_size=1
+            )
+        
+        # Setup LLM
+        if is_azure:
+            from llama_index.llms.azure_openai import AzureOpenAI
+            Settings.llm = AzureOpenAI(
+                api_key=self.api_key,
+                azure_endpoint=self.base_url,
+                engine=self.model,
+                api_version="2024-02-01"
+            )
+        elif is_openai:
+            from llama_index.llms.openai import OpenAI
+            Settings.llm = OpenAI(
+                api_key=self.api_key,
+                model=self.model,
+                api_base=self.base_url
+            )
+        else:
+            Settings.llm = Ollama(
+                model=self.model,
+                request_timeout=240.0,
+                context_window=8192,
+                base_url=self.base_url
+            )
     
     def _setup_storage(self):
         self.client = chromadb.PersistentClient(path=self.db_path)
-        self.doc_collection = self.client.get_or_create_collection("documents")
-        self.status_collection = self.client.get_or_create_collection("status")
+        
+        # Determine collection suffix based on service type
+        collection_suffix = ""
+        if self.api_key:
+            collection_suffix = "_openai"
+        
+        collection_name = f"documents{collection_suffix}"
+        status_collection_name = f"status{collection_suffix}"
+        
+        try:
+            self.doc_collection = self.client.get_or_create_collection(collection_name)
+            self.status_collection = self.client.get_or_create_collection(status_collection_name)
+        except Exception as e:
+            # If there's a dimension mismatch, delete and recreate
+            if "dimension" in str(e).lower():
+                try:
+                    self.client.delete_collection(collection_name)
+                    self.client.delete_collection(status_collection_name)
+                except:
+                    pass
+                self.doc_collection = self.client.create_collection(collection_name)
+                self.status_collection = self.client.create_collection(status_collection_name)
+            else:
+                raise e
         
         self.doc_store = ChromaVectorStore(chroma_collection=self.doc_collection)
-        
         self.doc_context = StorageContext.from_defaults(vector_store=self.doc_store)
     
 
@@ -162,6 +239,68 @@ class DocumentIndexer:
         
         print("Index loading/creation completed")
     
+    def process_single_file(self, file_path):
+        """Process a single file"""
+        if not os.path.exists(file_path):
+            print(f"Error: File not found: {file_path}")
+            return
+        
+        print(f"Processing single file: {os.path.basename(file_path)}")
+        
+        try:
+            # Handle markdown files
+            if file_path.endswith('.md'):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            else:
+                # Convert non-markdown files
+                text = self._convert_with_docling(file_path)
+                # Save markdown version
+                md_path = os.path.splitext(file_path)[0] + '.md'
+                with open(md_path, 'w', encoding='utf-8') as f:
+                    f.write(text)
+            
+            doc = Document(
+                text=text,
+                metadata={
+                    'file_name': os.path.basename(file_path),
+                    'file_path': file_path
+                }
+            )
+            
+            # Detect structure and process
+            detector = StructureDetector()
+            detection_result = detector.detect_structure(doc.text)
+            
+            is_legal = self._detect_legal_document(doc.text)
+            has_structure = (detection_result.get('grouped_headers') and 
+                           len(detection_result['grouped_headers']) > 0)
+            
+            if is_legal:
+                print(f"📋 Legal document detected")
+                structure = extract_structure(doc.text)
+                if structure:
+                    print(f"✅ Extracted {len(structure)} legal structural elements")
+                    structured_documents = self.create_structured_documents(structure, file_path=file_path)
+                    print(f"➡️ Created {len(structured_documents)} structured documents")
+                    for struct_doc in structured_documents:
+                        self.index.insert(struct_doc)
+            elif has_structure:
+                print(f"📄 Structured document detected")
+                structured_documents = self._create_general_structured_documents(detection_result, doc)
+                print(f"✅ Created {len(structured_documents)} general structured documents")
+                for struct_doc in structured_documents:
+                    self.index.insert(struct_doc)
+            else:
+                print(f"📝 Plain document")
+                self.index.insert(doc)
+            
+            self._mark_file_complete(file_path)
+            print(f"✅ Successfully processed: {os.path.basename(file_path)}")
+            
+        except Exception as e:
+            print(f"❌ Failed to process {os.path.basename(file_path)}: {e}")
+    
     def process_files(self, target_path=None):
         """Process files from target directory"""
         original_target_dir = self.target_dir
@@ -187,20 +326,32 @@ class DocumentIndexer:
                 print(f"Processing {i}/{len(remaining_docs)}: {doc.metadata.get('file_name', 'Unknown')}")
                 
                 try:
-                    # Check if document is legal and extract structure
-                    if self._detect_legal_document(doc.text):
+                    # Detect document structure for all documents
+                    detector = StructureDetector()
+                    detection_result = detector.detect_structure(doc.text)
+                    
+                    # Check if document has any structure (legal or general)
+                    is_legal = self._detect_legal_document(doc.text)
+                    has_structure = (detection_result.get('grouped_headers') and 
+                                   len(detection_result['grouped_headers']) > 0)
+                    
+                    if is_legal:
                         print(f"📋 Legal document detected: {doc.metadata.get('file_name')}")
                         structure = extract_structure(doc.text)
                         if structure:
-                            print(f"✅ Extracted {len(structure)} structural elements")
-                            # Create structured documents
-                            structured_documents = self.create_structured_documents(structure,file_path=doc.metadata.get('file_path'))
-                            print(f"➡️ Created {len(structured_documents)} structured documents for {doc.metadata.get('file_name', 'Unknown')}")
-                            # Insert each structured document individually
-                            for j, struct_doc in enumerate(structured_documents, 1):
-                                print(f"   Inserting structured doc {j}/{len(structured_documents)}: {struct_doc.metadata.get('hierarchy_path', 'N/A')}")
+                            print(f"✅ Extracted {len(structure)} legal structural elements")
+                            structured_documents = self.create_structured_documents(structure, file_path=doc.metadata.get('file_path'))
+                            print(f"➡️ Created {len(structured_documents)} structured documents")
+                            for struct_doc in structured_documents:
                                 self.index.insert(struct_doc)
+                    elif has_structure:
+                        print(f"📄 Structured document detected: {doc.metadata.get('file_name')}")
+                        structured_documents = self._create_general_structured_documents(detection_result, doc)
+                        print(f"✅ Created {len(structured_documents)} general structured documents")
+                        for struct_doc in structured_documents:
+                            self.index.insert(struct_doc)
                     else:
+                        print(f"📝 Plain document: {doc.metadata.get('file_name')}")
                         self.index.insert(doc)
                         
                     self._mark_file_complete(doc.metadata.get('file_path'))
@@ -254,8 +405,28 @@ class DocumentIndexer:
                 for i, doc in enumerate(new_documents, 1):
                     print(f"Processing new document {i}/{len(new_documents)}: {doc.metadata.get('file_name', 'Unknown')}")
                     
-                    # Add to main index
-                    self.index.insert(doc)
+                    # Detect structure for new documents too
+                    detector = StructureDetector()
+                    detection_result = detector.detect_structure(doc.text)
+                    
+                    is_legal = self._detect_legal_document(doc.text)
+                    has_structure = (detection_result.get('grouped_headers') and 
+                                   len(detection_result['grouped_headers']) > 0)
+                    
+                    if is_legal:
+                        structure = extract_structure(doc.text)
+                        if structure:
+                            structured_documents = self.create_structured_documents(structure, file_path=doc.metadata.get('file_path'))
+                            for struct_doc in structured_documents:
+                                self.index.insert(struct_doc)
+                        else:
+                            self.index.insert(doc)
+                    elif has_structure:
+                        structured_documents = self._create_general_structured_documents(detection_result, doc)
+                        for struct_doc in structured_documents:
+                            self.index.insert(struct_doc)
+                    else:
+                        self.index.insert(doc)
                 
                 print(f"Processed {len(new_documents)} new documents")
     
@@ -449,6 +620,100 @@ class DocumentIndexer:
                     file_path
                 )
                 documents.extend(nested_docs)
+        
+        return documents
+    
+    def _create_general_structured_documents(self, detection_result, original_doc):
+        """Create structured documents from general document structure detection"""
+        documents = []
+        grouped_headers = detection_result.get('grouped_headers', [])
+        text = original_doc.text
+        file_path = original_doc.metadata.get('file_path', '')
+        
+        for group in grouped_headers:
+            if group.get('type') == 'prelims':
+                # Extract prelims content
+                prelims_content = text[:group['end_position']].strip()
+                if prelims_content:
+                    doc = Document(
+                        text=prelims_content,
+                        metadata={
+                            'type': 'prelims',
+                            'title': 'Preliminary Content',
+                            'hierarchy_path': 'Prelims',
+                            'level': 1,
+                            'file_path': file_path,
+                            'file_name': original_doc.metadata.get('file_name', '')
+                        }
+                    )
+                    documents.append(doc)
+            
+            elif group.get('type') == 'header_group':
+                header = group['header']
+                items = group.get('items', [])
+                
+                # Create document for header section
+                header_start = header['position']
+                
+                # Find content between header and first numbered item
+                if items:
+                    first_item_pos = items[0]['position']
+                    header_content = text[header_start:first_item_pos].strip()
+                else:
+                    # Find next header or end of document
+                    next_pos = len(text)
+                    for other_group in grouped_headers:
+                        if (other_group.get('type') == 'header_group' and 
+                            other_group['header']['position'] > header_start):
+                            next_pos = min(next_pos, other_group['header']['position'])
+                    header_content = text[header_start:next_pos].strip()
+                
+                if header_content:
+                    doc = Document(
+                        text=header_content,
+                        metadata={
+                            'type': 'header',
+                            'title': header['text'],
+                            'hierarchy_path': f"H{header['level']}: {header['text']}",
+                            'level': header['level'],
+                            'file_path': file_path,
+                            'file_name': original_doc.metadata.get('file_name', '')
+                        }
+                    )
+                    documents.append(doc)
+                
+                # Create documents for numbered items under this header
+                for i, item in enumerate(items):
+                    item_start = item['position']
+                    
+                    # Find content for this numbered item
+                    if i + 1 < len(items):
+                        item_end = items[i + 1]['position']
+                    else:
+                        # Find next header or end of document
+                        item_end = len(text)
+                        for other_group in grouped_headers:
+                            if (other_group.get('type') == 'header_group' and 
+                                other_group['header']['position'] > item_start):
+                                item_end = min(item_end, other_group['header']['position'])
+                    
+                    item_content = text[item_start:item_end].strip()
+                    
+                    if item_content:
+                        doc = Document(
+                            text=item_content,
+                            metadata={
+                                'type': 'numbered_item',
+                                'number': item['number'],
+                                'title': item['text'],
+                                'hierarchy_path': f"H{header['level']}: {header['text']} / {item['number']}. {item['text']}",
+                                'level': header['level'] + 1,
+                                'parent_header': header['text'],
+                                'file_path': file_path,
+                                'file_name': original_doc.metadata.get('file_name', '')
+                            }
+                        )
+                        documents.append(doc)
         
         return documents
 

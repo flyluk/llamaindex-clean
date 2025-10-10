@@ -11,9 +11,9 @@
             </div>
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="directVector" name="direct_vector">
-                    <label class="form-check-label" for="directVector">
-                        🎯 Direct vector search (skip keyword search)
+                    <input class="form-check-input" type="checkbox" id="useKeyword" name="use_keyword">
+                    <label class="form-check-label" for="useKeyword">
+                        🔍 Use keyword search (default: vector search)
                     </label>
                 </div>
             </div>
@@ -48,6 +48,72 @@
             </div>
             <small class="text-muted" id="progressText">Preparing upload...</small>
         </div>
+        
+        <!-- Model Selection Section -->
+        <div class="mt-4">
+            <h5>🤖 Model Selection</h5>
+            {% if is_azure %}
+                <div class="alert alert-info">
+                    <i class="bi bi-cloud"></i> Azure endpoint detected<br>
+                    <strong>Model:</strong> {{ config.default_model }}
+                </div>
+            {% else %}
+                <div class="mb-3">
+                    <select class="form-select" id="modelSelect">
+                        {% for model in installed_models %}
+                            <option value="{{ model }}" {% if model == config.default_model %}selected{% endif %}>
+                                {{ model }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="changeModel()">Change Model</button>
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Knowledge Status Section -->
+        <div class="mt-4">
+            <h5>📊 Knowledge Status</h5>
+            {% if knowledge_status %}
+                {% if knowledge_status.error %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> {{ knowledge_status.error }}
+                    </div>
+                {% else %}
+                    <div class="card">
+                        <div class="card-body">
+                            <p><strong>Database:</strong> {{ knowledge_status.db_path|truncatechars:50 }}</p>
+                            <p><strong>Model:</strong> {{ knowledge_status.model }}</p>
+                            <p><strong>Documents:</strong> {{ knowledge_status.doc_count }}</p>
+                            <p><strong>Processed Files:</strong> {{ knowledge_status.processed_files_count }}</p>
+                            <p><strong>Completed Files:</strong> {{ knowledge_status.completed_files_count }}</p>
+                            
+                            {% if knowledge_status.files %}
+                                <details class="mt-2">
+                                    <summary><strong>Files ({{ knowledge_status.files|length }})</strong></summary>
+                                    <div class="mt-2">
+                                        {% for file in knowledge_status.files %}
+                                            <div class="d-flex justify-content-between align-items-center py-1">
+                                                <span class="text-truncate">{{ file.name }}</span>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="badge {% if file.completed %}bg-success{% else %}bg-warning{% endif %}">
+                                                        {% if file.completed %}✅ Complete{% else %}⚠️ Partial{% endif %}
+                                                    </span>
+                                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('{{ file.path }}')"
+                                                            title="Delete file from database">
+                                                        🗑️
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </details>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+            {% endif %}
+        </div>
     </div>
 </div>
 
@@ -61,7 +127,7 @@ $('#searchForm').submit(function(e) {
     
     $.post('/search/', {
         'query': query,
-        'direct_vector': $('#directVector').is(':checked'),
+        'use_keyword': $('#useKeyword').is(':checked'),
         'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
     }, function(data) {
         if (data.success) {
@@ -142,6 +208,46 @@ window.showHistoryResult = function(query, result, kb, model) {
     // Show history info
     const historyInfo = `<div class="alert alert-info"><i class="bi bi-clock-history"></i> From history - KB: ${kb}, Model: ${model}</div>`;
     $('#searchResult .card-body').prepend(historyInfo);
+};
+
+// Function to delete file
+window.deleteFile = function(filePath) {
+    if (!confirm('Are you sure you want to delete this file from the database?')) {
+        return;
+    }
+    
+    $.post('/delete_file/', {
+        'file_path': filePath,
+        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+    }, function(data) {
+        if (data.success) {
+            alert('File deleted successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    }).fail(function() {
+        alert('Connection error. Please try again.');
+    });
+};
+
+// Function to change model (only for non-Azure)
+window.changeModel = function() {
+    const selectedModel = $('#modelSelect').val();
+    
+    $.post('/change_model/', {
+        'model': selectedModel,
+        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+    }, function(data) {
+        if (data.success) {
+            alert('Model changed successfully!');
+            location.reload();
+        } else {
+            alert('Error changing model');
+        }
+    }).fail(function() {
+        alert('Connection error. Please try again.');
+    });
 };
 </script>
 {% endblock %}

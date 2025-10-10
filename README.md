@@ -112,20 +112,64 @@ python structure_extractor.py input.md [output.json]
 
 ## Configuration
 
-The application uses `config.json` for persistent settings:
+The application uses `config.json` for unified service configuration:
 
 ```json
 {
-  "embed_base_url": "http://localhost:11434",
-  "ollama_base_url": "http://localhost:11434",
+  "base_url": "http://localhost:11434",
+  "embed_url": "http://localhost:11434",
+  "api_key": "",
   "default_model": "deepseek-r1:14b",
+  "embed_model": "nomic-embed-text",
   "default_kb": "default"
 }
 ```
 
-- **Server URLs**: Configure embedding and Ollama server endpoints
-- **Default Model**: Auto-select preferred model on startup
-- **Default KB**: Remember last used knowledge base
+### Service Auto-Detection
+- **Ollama**: No API key required, uses local endpoints
+- **Azure OpenAI**: Detected by "azure" in URLs, requires API key
+- **OpenAI**: API key provided with non-Azure URLs
+
+### Configuration Examples
+
+**Ollama (Local)**
+```json
+{
+  "base_url": "http://localhost:11434",
+  "api_key": null,
+  "default_model": "deepseek-r1:14b",
+  "embed_model": "nomic-embed-text"
+}
+```
+
+**Azure OpenAI**
+```json
+{
+  "base_url": "https://your-resource.cognitiveservices.azure.com/",
+  "embed_url": "https://your-resource.cognitiveservices.azure.com/",
+  "api_key": "your-azure-api-key",
+  "default_model": "gpt-4o",
+  "embed_model": "text-embedding-3-small"
+}
+```
+
+**OpenAI**
+```json
+{
+  "base_url": "https://api.openai.com/v1",
+  "api_key": "your-openai-api-key",
+  "default_model": "gpt-4o",
+  "embed_model": "text-embedding-3-small"
+}
+```
+
+### Configuration Options
+- **base_url**: LLM service endpoint
+- **embed_url**: Embedding service endpoint (defaults to base_url)
+- **api_key**: Authentication key (null for Ollama)
+- **default_model**: LLM model name
+- **embed_model**: Embedding model name
+- **default_kb**: Default knowledge base
 - **Auto-Save**: Settings persist between sessions
 - **Search History**: Stored in `history.json` with 50-entry limit
 
@@ -191,13 +235,30 @@ python test_docling.py sample.pdf
 ## Model Support
 
 ### Ollama Models
-- `gpt-oss:20b` (default)
+- `gpt-oss:20b`
 - `llama3.2:3b`
 - `llama3.1:8b` 
 - `qwen2.5:7b`
-- `deepseek-r1:14b`
+- `deepseek-r1:14b` (default)
 - `deepseek-r1:8b`
 - Any Ollama model
+
+### Azure OpenAI Models
+- `DeepSeek-R1`
+- `gpt-4o`
+- `gpt-4`
+- `gpt-35-turbo`
+- Any deployed Azure model
+
+### OpenAI Models
+- `gpt-4o`
+- `gpt-4-turbo`
+- `gpt-3.5-turbo`
+- Any OpenAI model
+
+### Embedding Models
+- **Ollama**: `nomic-embed-text`, `mxbai-embed-large`
+- **Azure/OpenAI**: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`
 
 ## Architecture
 
