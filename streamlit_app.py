@@ -202,15 +202,17 @@ with st.sidebar.expander(f"🕒 Search History ({len(history)} queries)", expand
     else:
         st.info("No search history yet")
 
-# Initialize active tab in session state
+# Initialize active tab and chat history in session state
 if 'active_tab' not in st.session_state:
     st.session_state.active_tab = 0
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
 
 # Main interface
 tab1, tab2, tab3, tab4 = st.tabs(["🔍 Search", "📁 Upload", "⚙️ Admin", "🤖 Models"])
 
 with tab1:
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         st.header("Search Documents")
     with col2:
@@ -218,6 +220,19 @@ with tab1:
             st.session_state.current_query = ""
             st.session_state.current_result = None
             st.rerun()
+    with col3:
+        if st.button("Clear Chat", type="secondary"):
+            st.session_state.chat_history = []
+            st.success("Chat history cleared")
+    
+    # Display chat history
+    if st.session_state.chat_history:
+        with st.expander(f"💬 Chat History ({len(st.session_state.chat_history)} messages)", expanded=False):
+            for i, msg in enumerate(st.session_state.chat_history):
+                if msg['role'] == 'user':
+                    st.markdown(f"**You:** {msg['content']}")
+                else:
+                    st.markdown(f"**Assistant:** {msg['content'][:200]}...")
     
     query = st.text_input("Enter your query:", value=st.session_state.get('current_query', ''), placeholder="What are you looking for?")
     col1, col2 = st.columns(2)
@@ -227,12 +242,25 @@ with tab1:
     
     if st.button("Search", type="primary") and query:
         with st.spinner("Searching..."):
-            result, output = capture_output_live(indexer.query, query, use_direct)
+            # Format chat history for the query
+            chat_history_text = None
+            if st.session_state.chat_history:
+                history_parts = []
+                for msg in st.session_state.chat_history[-10:]:  # Last 10 messages
+                    role = "User" if msg['role'] == 'user' else "Assistant"
+                    history_parts.append(f"{role}: {msg['content']}")
+                chat_history_text = "\n".join(history_parts)
+            
+            result, output = capture_output_live(indexer.query, query, use_direct, 50, chat_history_text)
             
             if output:
                 st.text_area("Search Process:", output, height=200)
             
             if result:
+                # Add to chat history
+                st.session_state.chat_history.append({"role": "user", "content": query})
+                st.session_state.chat_history.append({"role": "assistant", "content": str(result)})
+                
                 add_to_history(query, result, selected_kb, model)
                 st.session_state.current_result = str(result)
                 st.success("Search completed!")

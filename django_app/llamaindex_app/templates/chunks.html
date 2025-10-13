@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                📄 Documents
+            </div>
+            <div class="card-body">
+                <div id="documentsList" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <small class="text-muted ms-2">Loading documents...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                🧩 Chunks
+            </div>
+            <div class="card-body">
+                <div id="chunksList" style="max-height: 400px; overflow-y: auto;">
+                    <small class="text-muted">Select a document to view chunks</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                📝 Chunk Content
+            </div>
+            <div class="card-body">
+                <div id="chunkContent" style="max-height: 400px; overflow-y: auto;">
+                    <small class="text-muted">Select a chunk to view content</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+$(document).ready(function() {
+    loadDocuments();
+});
+
+function loadDocuments() {
+    $.get('/get-documents/').done(function(data) {
+        if (data.success) {
+            let html = '';
+            Object.entries(data.documents).forEach(([path, name]) => {
+                html += `<div class="list-group-item list-group-item-action" onclick="loadChunks('${path}')" style="cursor: pointer;">`;
+                html += `<div class="fw-bold">${name}</div>`;
+                html += `<small class="text-muted">${path}</small>`;
+                html += `</div>`;
+            });
+            $('#documentsList').html(html || '<small class="text-muted">No documents found</small>');
+        } else {
+            $('#documentsList').html(`<div class="alert alert-danger">Error: ${data.error}</div>`);
+        }
+    }).fail(function() {
+        $('#documentsList').html('<div class="alert alert-danger">Failed to load documents</div>');
+    });
+}
+
+function loadChunks(filePath) {
+    $('#chunksList').html('<div class="text-center"><div class="spinner-border spinner-border-sm"></div><small class="text-muted ms-2">Loading chunks...</small></div>');
+    $('#chunkContent').html('<small class="text-muted">Select a chunk to view content</small>');
+    
+    $.get('/get-chunks/', {file_path: filePath}).done(function(data) {
+        if (data.success) {
+            let html = '';
+            data.chunks.forEach((chunk, index) => {
+                const preview = chunk.text.substring(0, 100) + (chunk.text.length > 100 ? '...' : '');
+                html += `<div class="list-group-item list-group-item-action" onclick="showChunk(${index})" style="cursor: pointer;">`;
+                html += `<div class="fw-bold">Chunk ${index + 1}</div>`;
+                html += `<small class="text-muted">${preview}</small>`;
+                html += `</div>`;
+            });
+            $('#chunksList').html(html || '<small class="text-muted">No chunks found</small>');
+            window.currentChunks = data.chunks;
+        } else {
+            $('#chunksList').html(`<div class="alert alert-danger">Error: ${data.error}</div>`);
+        }
+    }).fail(function() {
+        $('#chunksList').html('<div class="alert alert-danger">Failed to load chunks</div>');
+    });
+}
+
+function showChunk(index) {
+    if (window.currentChunks && window.currentChunks[index]) {
+        const chunk = window.currentChunks[index];
+        let html = `<div class="mb-3">`;
+        html += `<h6>Chunk ${index + 1}</h6>`;
+        html += `<div class="markdown-content p-3" style="background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px;">`;
+        html += chunk.text.replace(/\n/g, '<br>');
+        html += `</div>`;
+        if (chunk.metadata) {
+            html += `<details class="mt-2"><summary>Metadata</summary><pre class="mt-2">${JSON.stringify(chunk.metadata, null, 2)}</pre></details>`;
+        }
+        html += `</div>`;
+        $('#chunkContent').html(html);
+    }
+}
+</script>
+{% endblock %}

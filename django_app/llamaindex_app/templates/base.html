@@ -42,6 +42,7 @@
             </a>
             <div class="navbar-nav">
                 <a class="nav-link" href="/"><i class="bi bi-search"></i> Search</a>
+                <a class="nav-link" href="/chunks/"><i class="bi bi-file-text"></i> Chunks</a>
                 <a class="nav-link" href="/models/"><i class="bi bi-cpu"></i> Models</a>
                 <a class="nav-link" href="/admin_panel/"><i class="bi bi-gear"></i> Admin</a>
             </div>
@@ -238,7 +239,7 @@
         });
     }
     
-    function addToHistory(query, result, kb, model) {
+    function addToHistory(query, result, kb, model, chatHistory) {
         $.get('/load-history/').done(function(data) {
             const history = data.success ? data.history : [];
             const entry = {
@@ -246,7 +247,8 @@
                 query: query,
                 result: result,
                 kb: kb,
-                model: model
+                model: model,
+                chatHistory: chatHistory || ''
             };
             history.unshift(entry);
             const trimmedHistory = history.slice(0, 50);
@@ -265,7 +267,7 @@
             if (data.success) {
                 const entry = data.history.find(h => h.timestamp === timestamp);
                 if (entry && typeof window.showHistoryResult === 'function') {
-                    window.showHistoryResult(entry.query, entry.result, entry.kb, entry.model);
+                    window.showHistoryResult(entry.query, entry.result, entry.kb, entry.model, entry.chatHistory);
                 }
             }
         });

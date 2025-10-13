@@ -1,0 +1,28 @@
+feat: Implement hybrid search with chat history and enhanced RAG features
+
+- Implement QueryFusionRetriever with 4 query variations and reciprocal reranking
+- Add RAG prompt template with structured citation guidelines
+- Integrate chat history context across queries in both Streamlit and Django frontends
+- Add smart citations with <source_id> tags for inline document references
+- Create doc_to_docx.py converter with folder batch processing and overwrite support
+- Update search history to save and restore chat context
+- Add debug logging with context placeholder for cleaner output
+- Remove BM25 dependency to fix import issues
+- Update README.md with new hybrid search and chat history features
+- Add interactive chunk browser tab to Django interface
+- Implement document/chunk selection with 3-panel layout
+- Add endpoints for retrieving documents and chunks from database
+- Update cost calculation with correct pricing ($0.00135 input, $0.0054 output per 1000 tokens)
+- Add chunk content viewer with metadata inspection
+- Update README with chunk browser usage and cost tracking info
+- Add docling.service systemd configuration
+- Add install-docling-service.sh installation script
+- Update README.md with systemd service documentation
+- Service runs docling-serve with verbose logging on port 5001
+- Auto-restart on failure with GPU support (CUDA device 1)
+- Set hybrid search as default in Django interface
+- Updated checkbox wording: "Use vector search only (default: hybrid search)"
+
+Breaking changes:
+- Search mode now defaults to hybrid search instead of direct vector search
+- Chat history is now included in search context and saved with history entries

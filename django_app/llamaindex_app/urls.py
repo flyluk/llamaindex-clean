@@ -21,5 +21,8 @@ urlpatterns = [
     path('delete_file/', views.delete_file, name='delete_file'),
     path('save-history/', views.save_history, name='save_history'),
     path('load-history/', views.load_history, name='load_history'),
+    path('chunks/', views.chunks_view, name='chunks'),
+    path('get-documents/', views.get_documents, name='get_documents'),
+    path('get-chunks/', views.get_chunks, name='get_chunks'),
     path('.well-known/appspecific/com.chrome.devtools.json', lambda r: HttpResponse(status=204)),
 ]

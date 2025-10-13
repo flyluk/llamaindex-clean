@@ -8,18 +8,21 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Local Embeddings**: Uses nomic-embed-text for embeddings
 - **Persistent Storage**: ChromaDB for vector storage
 - **Advanced Parsing**: Docling for PDF, Word, and complex document formats
-- **Smart Search**: Sentence-first keyword search with word fallback, section, and vector search
+- **Hybrid Search**: Query fusion with multiple query generation and reciprocal reranking
+- **Chat History**: Conversational context maintained across queries with RAG prompt template
+- **Smart Citations**: Inline source citations with proper document references
 - **Large Document Support**: Smart chunking for large files
 - **Auto-Summary Generation**: Automatically creates summaries when missing
 - **Structured Document Processing**: Hierarchical extraction and RAG ingestion
 - **Legal Document Auto-Detection**: Automatic detection and structure extraction for legal documents
 - **Real-time Processing**: Live output streaming during document processing
 - **Multiple Knowledge Bases**: Create and manage separate knowledge bases
-- **Search History**: Collapsible history with knowledge base and model tracking
-- **JSON File Persistence**: Search history saved to JSON file instead of localStorage
+- **Search History**: Collapsible history with chat context and model tracking
+- **JSON File Persistence**: Search history with chat context saved to JSON file
 - **Web Interface**: Enhanced Streamlit frontend with improved UX
 - **Django Alternative**: Modern Django web interface with dark theme and progress indicators
 - **Model Management**: Visual progress bars for Ollama model pulling and deletion
+- **Chunk Browser**: Interactive document chunk viewer for database inspection
 - **CLI Tools**: Document indexing, structure extraction, and database administration
 - **Docker Support**: Containerized deployment with GPU support
 - **Persistent Configuration**: Server URLs and preferences saved automatically
@@ -37,6 +40,11 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
    ```bash
    ollama pull gpt-oss:20b
    ollama pull nomic-embed-text
+   ```
+
+3. **Install Docling Server (Optional)**
+   ```bash
+   pip install docling-serve
    ```
 
 ## Installation
@@ -69,6 +77,15 @@ cd django_app
 python manage.py runserver
 # Access at http://localhost:8000
 ```
+
+### Chunk Browser
+
+The Django interface includes a chunk browser for inspecting document storage:
+
+1. **Navigate to Chunks tab** in the web interface
+2. **Select a document** from the left panel to view its chunks
+3. **Select a chunk** from the middle panel to view full content and metadata
+4. **Inspect metadata** including hierarchy paths and document structure
 
 ### CLI Tools
 
@@ -195,6 +212,28 @@ docker-compose up --build
 python test_docling.py sample.pdf
 ```
 
+## Systemd Service
+
+### Docling Server Service
+Run Docling server as a systemd service:
+
+```bash
+# Install and start service
+./install-docling-service.sh
+
+# Manual service management
+sudo systemctl start docling
+sudo systemctl stop docling
+sudo systemctl status docling
+```
+
+**Service Features:**
+- Auto-restart on failure
+- GPU support (CUDA device 1)
+- Verbose logging
+- Port 5001 (configurable)
+- Runs as user 'fly'
+
 ## Dynamic Structure Detection
 
 ### Auto-Detection Patterns
@@ -227,10 +266,12 @@ python test_docling.py sample.pdf
 
 ## Search Modes
 
-- **Default**: Sentence-first keyword → Word fallback → Vector search cascade
-- **Direct**: Pure vector search only (checkbox option in web interface)
+- **Hybrid Search (Default)**: Query fusion with 4 query variations and reciprocal reranking for enhanced retrieval accuracy
+- **Vector Search Only**: Pure vector search (checkbox option: "Use vector search only")
+- **Chat History Context**: Previous conversation context included in queries
 - **Section Search**: Direct section number matching
 - **Legal Document Search**: Structure-aware search for legal documents
+- **Smart Citations**: Automatic inline citations with [source_id] format
 
 ## Model Support
 
@@ -260,10 +301,33 @@ python test_docling.py sample.pdf
 - **Ollama**: `nomic-embed-text`, `mxbai-embed-large`
 - **Azure/OpenAI**: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`
 
+### Cost Tracking
+
+- **Input tokens**: $0.00135 per 1000 tokens
+- **Output tokens**: $0.0054 per 1000 tokens
+- **Real-time cost estimation** displayed during queries
+- **Token counting** based on character length approximation
+
 ## Architecture
 
-- **DocumentIndexer**: Core class with automatic legal document detection and structure extraction
+- **DocumentIndexer**: Core class with hybrid search and chat history support
+- **RAG Prompt Template**: Structured prompts with citation guidelines and chat context
+- **Query Fusion**: Multiple query generation with custom prompts for better retrieval
+- **Chat History Management**: Persistent conversation context across sessions
+- **Smart Citations**: Automatic source_id tagging for inline document references
 - **Ollama Backend**: Local LLM inference with configurable server URLs
+- **Docling Integration**: Advanced document parsing with pre-cached models
+- **Enhanced Search**: Hybrid retrieval with query fusion and reciprocal reranking
+- **Smart Chunking**: Adaptive chunking based on document size
+- **Auto-Recovery**: Generates missing summaries automatically
+- **Structured Processing**: Hierarchical document extraction with metadata
+- **Legal Document Auto-Detection**: Automatic pattern recognition for legal document structures
+- **Real-time Feedback**: Live processing output with line-by-line updates
+- **Multi-KB Support**: Multiple knowledge base management with context tracking
+- **Enhanced UI**: Chat history display and server configuration
+- **Content Extraction**: Markdown cleaning and content preservation
+- **Structure Validation**: JSON schema validation and extraction method comparison
+- **Persistent Config**: Automatic saving of user preferences and server settingsnference with configurable server URLs
 - **Docling Integration**: Advanced document parsing with pre-cached models
 - **Enhanced Search**: Sentence-first keyword search with word fallback and vector search cascade
 - **Smart Chunking**: Adaptive chunking based on document size
@@ -302,6 +366,8 @@ python test_docling.py sample.pdf
 │   └── structure_schema.json         # JSON schema for structure validation
 ├── docker-compose.yml            # Docker deployment configuration
 ├── Dockerfile                    # Container build instructions
+├── docling.service               # Systemd service configuration for docling-serve
+├── install-docling-service.sh    # Systemd service installation script
 ├── config.json                   # Persistent application configuration (URL validation)
 ├── history.json                  # Search history (JSON file persistence)
 ├── requirements.txt              # Dependencies

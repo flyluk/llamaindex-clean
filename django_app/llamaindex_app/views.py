@@ -78,17 +78,12 @@ def get_knowledge_bases():
             default_db_path = get_db_path('default')
             indexer = DocumentIndexer(
                 target_dir="",
-                db_path=db_path,
+                db_path=default_db_path,
                 model=config["default_model"],
                 base_url=config["base_url"],
                 embed_url=config.get("embed_url", config["base_url"]),
                 api_key=config.get("api_key"),
                 embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-                openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-                openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-                openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-                openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
             )
             indexer.load_or_create_index()
             kb_options['default'] = default_db_path
@@ -141,18 +136,13 @@ def index(request):
     
     try:
         indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
         )
         indexer.load_or_create_index()
         knowledge_status = get_status_data(indexer)
@@ -171,9 +161,9 @@ def index(request):
 def search(request):
     if request.method == 'POST':
         query = request.POST.get('query')
-        use_keyword = request.POST.get('use_keyword') == 'true'
-        direct_vector = not use_keyword  # Invert logic: vector by default, keyword when checked
-        print(f"DEBUG: Search query: {query}, use_keyword: {use_keyword}, direct_vector: {direct_vector}")
+        use_vector_only = request.POST.get('use_direct_vector') == 'on'
+        chat_history = request.POST.get('chat_history', '')
+        print(f"DEBUG: Search query: {query}, use_vector_only: {use_vector_only}")
         
         if not DocumentIndexer:
             print("DEBUG: DocumentIndexer not available")
@@ -196,16 +186,11 @@ def search(request):
                 embed_url=config.get("embed_url", config["base_url"]),
                 api_key=config.get("api_key"),
                 embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
-        )
+            )
             print("DEBUG: Loading index")
             indexer.load_or_create_index()
             print("DEBUG: Querying")
-            result = indexer.query(query, direct_vector)
+            result = indexer.query(query, use_vector_only, 50, chat_history if chat_history else None)
             formatted_result = format_think_tags(result)
             print(f"DEBUG: Query result: {formatted_result}")
             return JsonResponse({'success': True, 'result': formatted_result})
@@ -226,18 +211,13 @@ def upload(request):
         db_path = get_db_path(kb_name)
         
         indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
         )
         indexer.load_or_create_index()
         
@@ -273,19 +253,14 @@ def admin_panel(request):
             
             try:
                 indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
-        )
+                    target_dir="",
+                    db_path=db_path,
+                    model=config["default_model"],
+                    base_url=config["base_url"],
+                    embed_url=config.get("embed_url", config["base_url"]),
+                    api_key=config.get("api_key"),
+                    embed_model=config.get("embed_model", "nomic-embed-text")
+                )
                 indexer.load_or_create_index()
                 messages.success(request, f'Knowledge base "{kb_name}" created successfully!')
             except Exception as e:
@@ -294,7 +269,8 @@ def admin_panel(request):
         return redirect('admin_panel')
     
     config = load_config()
-    installed_models = get_ollama_models(config["ollama_base_url"])
+    is_azure = is_azure_endpoint(config)
+    installed_models = [] if is_azure else get_ollama_models(config.get("base_url", "http://localhost:11434"))
     knowledge_bases = get_knowledge_bases()
     context = {
         'config': config,
@@ -306,7 +282,8 @@ def admin_panel(request):
 def models_view(request):
     config = load_config()
     library_models = get_ollama_library()
-    installed_models = get_ollama_models(config["ollama_base_url"])
+    is_azure = is_azure_endpoint(config)
+    installed_models = [] if is_azure else get_ollama_models(config.get("base_url", "http://localhost:11434"))
     knowledge_bases = get_knowledge_bases()
     
     context = {
@@ -326,7 +303,7 @@ def pull_model(request):
     config = load_config()
     
     try:
-        response = requests.post(f"{config['ollama_base_url']}/api/pull", 
+        response = requests.post(f"{config['base_url']}/api/pull", 
                                json={"name": model_name}, timeout=300)
         if response.status_code == 200:
             return JsonResponse({'success': True, 'message': f'Successfully pulled {model_name}'})
@@ -342,7 +319,7 @@ def delete_model(request):
     config = load_config()
     
     try:
-        response = requests.delete(f"{config['ollama_base_url']}/api/delete", 
+        response = requests.delete(f"{config['base_url']}/api/delete", 
                                  json={"name": model_name}, timeout=30)
         if response.status_code == 200:
             return JsonResponse({'success': True, 'message': f'Successfully deleted {model_name}'})
@@ -361,18 +338,13 @@ def delete_file(request):
     
     try:
         indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
         )
         indexer.load_or_create_index()
         
@@ -395,26 +367,6 @@ def change_model(request):
     with open(config_file, 'w') as f:
         json.dump(config, f, indent=2)
     
-    # Initialize DocumentIndexer with new model
-    kb_name = config.get('default_kb', 'default')
-    db_path = get_db_path(kb_name)
-    
-    indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
-        )
-    indexer.load_or_create_index()
-    
     return JsonResponse({'success': True})
 
 @csrf_exempt
@@ -423,10 +375,10 @@ def update_config(request):
     config_file = os.path.join(os.path.dirname(__file__), '..', '..', 'config.json')
     config = load_config()
     
-    if 'embed_base_url' in request.POST:
-        config['embed_base_url'] = request.POST.get('embed_base_url')
-    if 'ollama_base_url' in request.POST:
-        config['ollama_base_url'] = request.POST.get('ollama_base_url')
+    if 'base_url' in request.POST:
+        config['base_url'] = request.POST.get('base_url')
+    if 'embed_url' in request.POST:
+        config['embed_url'] = request.POST.get('embed_url')
     
     with open(config_file, 'w') as f:
         json.dump(config, f, indent=2)
@@ -442,18 +394,13 @@ def get_stats(request):
     
     try:
         indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
         )
         indexer.load_or_create_index()
         
@@ -491,18 +438,13 @@ def get_status(request):
     
     try:
         indexer = DocumentIndexer(
-                target_dir="",
-                db_path=db_path,
-                model=config["default_model"],
-                base_url=config["base_url"],
-                embed_url=config.get("embed_url", config["base_url"]),
-                api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
-            ) if config.get("use_openai") else None,
-            openai_embed_url=config.get("openai_embed_url", "https://api.openai.com/v1"),
-            openai_llm_url=config.get("openai_llm_url", "https://api.openai.com/v1"),
-            openai_embed_api_key=config.get("openai_embed_api_key") if config.get("use_openai") else None,
-            openai_embed_model=config.get("openai_embed_model", "text-embedding-3-small")
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
         )
         indexer.load_or_create_index()
         
@@ -552,6 +494,83 @@ def load_history(request):
         else:
             history = []
         return JsonResponse({'success': True, 'history': history})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+def chunks_view(request):
+    config = load_config()
+    knowledge_bases = get_knowledge_bases()
+    context = {
+        'config': config,
+        'knowledge_bases': knowledge_bases
+    }
+    return render(request, 'chunks.html', context)
+
+@csrf_exempt
+def get_documents(request):
+    config = load_config()
+    kb_name = config.get('default_kb', 'default')
+    db_path = get_db_path(kb_name)
+    
+    try:
+        indexer = DocumentIndexer(
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
+        )
+        indexer.load_or_create_index()
+        
+        doc_data = indexer.doc_collection.get(include=["metadatas"])
+        documents = {}
+        
+        for metadata in doc_data['metadatas']:
+            file_path = metadata.get('file_path')
+            if file_path:
+                file_name = metadata.get('file_name', os.path.basename(file_path))
+                if file_path not in documents:
+                    documents[file_path] = file_name
+        
+        return JsonResponse({'success': True, 'documents': documents})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+def get_chunks(request):
+    file_path = request.GET.get('file_path')
+    config = load_config()
+    kb_name = config.get('default_kb', 'default')
+    db_path = get_db_path(kb_name)
+    
+    try:
+        indexer = DocumentIndexer(
+            target_dir="",
+            db_path=db_path,
+            model=config["default_model"],
+            base_url=config["base_url"],
+            embed_url=config.get("embed_url", config["base_url"]),
+            api_key=config.get("api_key"),
+            embed_model=config.get("embed_model", "nomic-embed-text")
+        )
+        indexer.load_or_create_index()
+        
+        doc_data = indexer.doc_collection.get(include=["documents", "metadatas"])
+        chunks = []
+        
+        for i, metadata in enumerate(doc_data['metadatas']):
+            if metadata.get('file_path') == file_path:
+                chunk_text = doc_data['documents'][i]
+                chunk_id = doc_data['ids'][i]
+                chunks.append({
+                    'id': chunk_id,
+                    'text': chunk_text,
+                    'metadata': metadata
+                })
+        
+        return JsonResponse({'success': True, 'chunks': chunks})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 

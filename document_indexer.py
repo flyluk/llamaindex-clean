@@ -9,6 +9,8 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from docling.document_converter import DocumentConverter
 from structure_detect_n_extract import extract_structure, StructureDetector
 import re
+import sys
+from rag_prompt_template import create_rag_prompt
 
 # Setup TensorRT environment
 site_packages = site.getsitepackages()[0]
@@ -816,120 +818,99 @@ class DocumentIndexer:
         print(f"Best parameters: {best_params} (score: {best_score:.3f})")
         return best_params
     
-    def query(self, query_text, use_direct=False, similarity_top_k=5):
+    def query(self, query_text, use_direct=False, similarity_top_k=10, chat_history=None):
         print(f"Query: {query_text}")
-        print(f"Mode: {'Direct vector' if use_direct else 'Sentence -> Keyword -> Vector'}")
+        print(f"Mode: {'Hybrid search' if not use_direct else 'Direct vector search'}")
         
-        # Check if query is asking for specific section numbers
-        import re
-        section_matches = re.findall(r'Section\s+(\d+)', query_text, re.IGNORECASE)
-        # Also check for standalone numbers that might be section references
-        standalone_numbers = re.findall(r'\b(\d{2,3})\b', query_text)
-        # Combine both types of matches
-        all_section_nums = list(set(section_matches + standalone_numbers))
-        if all_section_nums:
-            print(f"Detected section number query: {all_section_nums}")
-            # Use much higher top_k for section-specific queries
-            similarity_top_k = max(similarity_top_k, 50)
-        
+        # Use hybrid search by default, direct vector only when specified
         if use_direct:
-            enhanced_query = f"""{query_text}
-            
-            Find and return the exact content of the requested section, part, or schedule. Include the full text and any subsections."""
-            
-            # Get retriever to see what documents are retrieved
             retriever = self.index.as_retriever(similarity_top_k=similarity_top_k)
-            nodes = retriever.retrieve(enhanced_query)
+        else:
+            from llama_index.retrievers.bm25 import BM25Retriever
+            from llama_index.core.retrievers import QueryFusionRetriever
             
-            # If looking for specific sections, boost nodes that contain those sections
-            if all_section_nums:
-                boosted_nodes = []
-                for node in nodes:
-                    boost_applied = False
-                    for section_num in all_section_nums:
-                        if f"Section {section_num}:" in node.text or f"Section {section_num} " in node.text:
-                            node.score += 0.5  # Boost score significantly
-                            if not boost_applied:
-                                boosted_nodes.insert(0, node)  # Move to front
-                                boost_applied = True
-                            break
-                    if not boost_applied:
-                        boosted_nodes.append(node)
-                nodes = boosted_nodes
+            # Get all nodes for BM25
+            all_nodes = []
+            doc_data = self.doc_collection.get(include=["documents", "metadatas"])
+            for i, doc_text in enumerate(doc_data["documents"]):
+                from llama_index.core.schema import TextNode
+                node = TextNode(text=doc_text, metadata=doc_data["metadatas"][i])
+                all_nodes.append(node)
             
-            print(f"\nVector search retrieved {len(nodes)} documents:")
-            for i, node in enumerate(nodes[:10], 1):  # Show top 10
-                doc_name = node.metadata.get('source', node.metadata.get('file_name', 'N/A'))
-                print(f"{i}. Score: {node.score:.3f} | Path: {node.metadata.get('hierarchy_path', 'N/A')} | Doc: {doc_name}")
-                print(f"   Text preview: {node.text[:100]}...")
+            # Create retrievers
+            vector_retriever = self.index.as_retriever(similarity_top_k=similarity_top_k)
+            bm25_retriever = BM25Retriever.from_defaults(nodes=all_nodes, similarity_top_k=similarity_top_k)
             
-            response = self.index.as_query_engine(similarity_top_k=similarity_top_k).query(enhanced_query)
-            print(f"\nDirect response:\n{response}")
-            return response
-        
-        # Try direct section search first for section queries
-        if all_section_nums:
-            all_section_results = []
-            for section_num in all_section_nums:
-                section_results = self.section_search(section_num)
-                all_section_results.extend(section_results)
+            # Custom query generation prompt
+            QUERY_GEN_PROMPT = (
+                "You are a helpful assistant that generates multiple search queries based on a "
+                "single input query. Generate {num_queries} search queries, one on each line, "
+                "related to the following input query:\n"
+                "Query: {query}\n"
+                "Queries:\n"
+            )
             
-            if all_section_results:
-                print(f"\nDirect section matches found for sections: {all_section_nums}")
-                combined_text = "\n\n".join([result['text'] for result in all_section_results])
-                response = Settings.llm.complete(f"Based on the text: {combined_text}\n\nQuestion: {query_text}")
-                print(f"\nSection-based response:\n{response}")
-                return response
+            # Combine with QueryFusionRetriever
+            retriever = QueryFusionRetriever(
+                [vector_retriever, bm25_retriever],
+                similarity_top_k=similarity_top_k,
+                num_queries=4,
+                mode="reciprocal_rerank",
+                use_async=False,
+                verbose=True,
+                query_gen_prompt=QUERY_GEN_PROMPT
+            )
         
-        # Try keyword search second
-        keyword_results = self.keyword_search(query_text)
-        if keyword_results:
-            print(f"\nKeyword matches: {len(keyword_results)}")
-            combined_text = "\n\n".join([result['text'] for result in keyword_results])
-            print(f"Using {len(keyword_results)} documents")
-            response = Settings.llm.complete(f"Based on the text: {combined_text}\n\nQuestion: {query_text}")
-            print(f"\nKeyword-based response:\n{response}")
-            return response
+        nodes = retriever.retrieve(query_text)
         
-
+        if not nodes:
+            print("No relevant documents found")
+            return "No relevant information found for your query."
         
-        # Fallback to vector search
-        print("\nUsing vector search fallback")
-        enhanced_query = f"""{query_text}
+        print(f"\nRetrieved {len(nodes)} relevant documents:")
+        for i, node in enumerate(nodes[:5], 1):  # Show top 5
+            doc_name = node.metadata.get('file_name', 'N/A')
+            hierarchy = node.metadata.get('hierarchy_path', 'N/A')
+            print(f"{i}. Score: {node.score:.3f} | {hierarchy} | {doc_name}")
+            print(f"   Preview: {node.text[:100]}...")
         
-        Find and return the exact content of the requested section, part, or schedule. Include the full text and any subsections."""
+        # Combine all retrieved context with source IDs
+        context_parts = []
+        for i, node in enumerate(nodes, 1):
+            hierarchy = node.metadata.get('hierarchy_path', '')
+            file_name = node.metadata.get('file_name', f'source_{i}')
+            
+            if hierarchy:
+                context_parts.append(f"<source_id>{file_name}</source_id>\n[{hierarchy}]\n{node.text}")
+            else:
+                context_parts.append(f"<source_id>{file_name}</source_id>\n{node.text}")
         
-        # Check if query is asking for a specific section number
-        import re
-        section_match = re.search(r'Section\s+(\d+)', query_text, re.IGNORECASE)
-        if section_match:
-            section_num = section_match.group(1)
-            print(f"Detected section number query: {section_num}")
-            # Use much higher top_k for section-specific queries
-            similarity_top_k = max(similarity_top_k, 50)
+        combined_context = "\n\n---\n\n".join(context_parts)
         
-        # Get retriever to see what documents are retrieved
-        retriever = self.index.as_retriever(similarity_top_k=similarity_top_k)
-        nodes = retriever.retrieve(enhanced_query)
+        # Use RAG prompt template with chat history
+        context_prompt = create_rag_prompt(combined_context, query_text, chat_history)
         
-        # If looking for specific section, boost nodes that contain that section
-        if section_match:
-            section_num = section_match.group(1)
-            boosted_nodes = []
-            for node in nodes:
-                if f"Section {section_num}:" in node.text or f"Section {section_num} " in node.text:
-                    node.score += 0.5  # Boost score significantly
-                    boosted_nodes.insert(0, node)  # Move to front
-                else:
-                    boosted_nodes.append(node)
-            nodes = boosted_nodes
+        # Debug print with context placeholder
+        debug_prompt = context_prompt.replace(combined_context, "{context}")
+        print(f"\n=== PROMPT TO LLM ===\n{debug_prompt}\n=== END PROMPT ===\n")
         
-        print(f"\nVector search retrieved {len(nodes)} documents:")
-        for i, node in enumerate(nodes[:10], 1):  # Show top 10
-            doc_name = node.metadata.get('source', node.metadata.get('file_name', 'N/A'))
-            print(f"{i}. Score: {node.score:.3f} | Path: {node.metadata.get('hierarchy_path', 'N/A')} | Doc: {doc_name}")
-            print(f"   Text preview: {node.text[:100]}...")
+        context_length = len(context_prompt)
+        input_tokens = context_length // 4
+        input_cost = (input_tokens / 1000) * 0.00135
         
-        response = self.index.as_query_engine(similarity_top_k=similarity_top_k).query(enhanced_query)
-        print(f"\nVector response:\n{response}")
+        print(f"\nGenerating response using {len(nodes)} context documents...")
+        print(f"Context length: {context_length:,} characters (~{input_tokens:,} tokens)")
+        print(f"Estimated input cost: ${input_cost:.6f} USD")
+        
+        response = Settings.llm.complete(context_prompt)
+        
+        output_length = len(str(response))
+        output_tokens = output_length // 4
+        output_cost = (output_tokens / 1000) * 0.0054
+        total_cost = input_cost + output_cost
+        
+        print(f"\nResponse length: {output_length:,} characters (~{output_tokens:,} tokens)")
+        print(f"Estimated output cost: ${output_cost:.6f} USD")
+        print(f"Total estimated cost: ${total_cost:.6f} USD")
+        print(f"\nContext-based response:\n{response}")
         return response

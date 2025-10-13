@@ -3,7 +3,23 @@
 {% block content %}
 <div class="row">
     <div class="col-md-8">
-        <h2>🔍 Search Documents</h2>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>🔍 Search Documents</h2>
+            <button class="btn btn-outline-secondary btn-sm" onclick="clearChatHistory()">Clear Chat</button>
+        </div>
+        
+        <!-- Chat History Display -->
+        <div id="chatHistory" class="mb-3" style="display:none;">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-chat-dots"></i> Chat History
+                    <button class="btn btn-sm btn-outline-secondary float-end" onclick="toggleChatHistory()">Toggle</button>
+                </div>
+                <div class="card-body" id="chatHistoryContent" style="max-height: 200px; overflow-y: auto;">
+                </div>
+            </div>
+        </div>
+        
         <form id="searchForm">
             {% csrf_token %}
             <div class="mb-3">
@@ -11,9 +27,9 @@
             </div>
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="useKeyword" name="use_keyword">
-                    <label class="form-check-label" for="useKeyword">
-                        🔍 Use keyword search (default: vector search)
+                    <input class="form-check-input" type="checkbox" id="useDirectVector" name="use_direct_vector">
+                    <label class="form-check-label" for="useDirectVector">
+                        ⚡ Use vector search only (default: hybrid search)
                     </label>
                 </div>
             </div>
@@ -118,6 +134,52 @@
 </div>
 
 <script>
+// Chat history management
+let chatHistory = [];
+
+function formatChatHistory() {
+    return chatHistory.map(msg => {
+        const role = msg.role === 'user' ? 'User' : 'Assistant';
+        return `${role}: ${msg.content}`;
+    }).join('\n');
+}
+
+function addToChatHistory(role, content) {
+    chatHistory.push({ role, content });
+    if (chatHistory.length > 20) { // Keep last 20 messages
+        chatHistory = chatHistory.slice(-20);
+    }
+    updateChatHistoryDisplay();
+}
+
+function updateChatHistoryDisplay() {
+    const historyDiv = $('#chatHistoryContent');
+    if (chatHistory.length === 0) {
+        $('#chatHistory').hide();
+        return;
+    }
+    
+    $('#chatHistory').show();
+    historyDiv.empty();
+    
+    chatHistory.forEach(msg => {
+        const messageDiv = $('<div class="mb-2"></div>');
+        const role = msg.role === 'user' ? 'You' : 'Assistant';
+        const preview = msg.content.length > 100 ? msg.content.substring(0, 100) + '...' : msg.content;
+        messageDiv.html(`<strong>${role}:</strong> ${preview}`);
+        historyDiv.append(messageDiv);
+    });
+}
+
+function clearChatHistory() {
+    chatHistory = [];
+    updateChatHistoryDisplay();
+}
+
+function toggleChatHistory() {
+    $('#chatHistoryContent').toggle();
+}
+
 $('#searchForm').submit(function(e) {
     e.preventDefault();
     const query = $('input[name="query"]').val();
@@ -125,17 +187,25 @@ $('#searchForm').submit(function(e) {
     $('#resultContent').html('<i class="bi bi-hourglass-split"></i> Searching...');
     $('#searchResult').show();
     
+    const chatHistoryText = formatChatHistory();
+    
     $.post('/search/', {
         'query': query,
-        'use_keyword': $('#useKeyword').is(':checked'),
+        'use_direct_vector': $('#useDirectVector').is(':checked'),
+        'chat_history': chatHistoryText,
         'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
     }, function(data) {
         if (data.success) {
             $('#resultContent').html(marked.parse(data.result));
-            // Add to history
+            
+            // Add to chat history
+            addToChatHistory('user', query);
+            addToChatHistory('assistant', data.result);
+            
+            // Add to search history with chat history
             const kb = $('input[name="kb_selection"]:checked').val() || 'default';
-            const model = $('#modelSelect').val();
-            addToHistory(query, data.result, kb, model);
+            const model = '{{ config.default_model }}';
+            addToHistory(query, data.result, kb, model, chatHistoryText);
         } else {
             $('#resultContent').html('<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Error: ' + data.error + '</div>');
         }
@@ -200,10 +270,23 @@ $('#uploadForm').submit(function(e) {
 });
 
 // Function to show history result
-window.showHistoryResult = function(query, result, kb, model) {
+window.showHistoryResult = function(query, result, kb, model, savedChatHistory) {
     $('input[name="query"]').val(query);
     $('#resultContent').html(marked.parse(result));
     $('#searchResult').show();
+    
+    // Restore chat history if available
+    if (savedChatHistory) {
+        chatHistory = [];
+        savedChatHistory.split('\n').forEach(line => {
+            if (line.startsWith('User: ')) {
+                chatHistory.push({ role: 'user', content: line.substring(6) });
+            } else if (line.startsWith('Assistant: ')) {
+                chatHistory.push({ role: 'assistant', content: line.substring(11) });
+            }
+        });
+        updateChatHistoryDisplay();
+    }
     
     // Show history info
     const historyInfo = `<div class="alert alert-info"><i class="bi bi-clock-history"></i> From history - KB: ${kb}, Model: ${model}</div>`;
