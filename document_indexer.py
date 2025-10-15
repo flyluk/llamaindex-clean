@@ -27,7 +27,7 @@ except ImportError:
     EVALUATION_AVAILABLE = False
 
 class DocumentIndexer:
-    def __init__(self, target_dir="/mnt/c/users/flyluk/test", db_path="./chroma_db", model="gpt-oss:20b", base_url="http://localhost:11434", embed_url=None, api_key=None, embed_model="nomic-embed-text"):
+    def __init__(self, target_dir="", db_path="./chroma_db", model="deepseek-r1:7b", base_url="http://localhost:11434", embed_url=None, api_key=None, embed_model="embeddinggemma", context_length=32768):
         self.target_dir = target_dir
         self.db_path = db_path
         self.model = model
@@ -35,18 +35,26 @@ class DocumentIndexer:
         self.embed_url = embed_url or base_url
         self.api_key = api_key
         self.embed_model = embed_model
+        self.context_length = context_length
         self._setup_settings()
         self._setup_storage()
         
     def _setup_settings(self):
-        Settings.node_parser = SentenceSplitter(chunk_size=3000, chunk_overlap=400)
+        Settings.node_parser = SentenceSplitter(chunk_size=4000, chunk_overlap=500)
         
-        # Auto-detect service type based on URL and API key
-        is_azure = "azure" in self.embed_url.lower()
-        is_openai = self.api_key and not is_azure
+        # Auto-detect service types
+        base_is_azure = "azure" in self.base_url.lower()
+        embed_is_azure = "azure" in self.embed_url.lower()
+        embed_is_ollama = not embed_is_azure and ("localhost" in self.embed_url or "11434" in self.embed_url)
         
-        # Setup embeddings
-        if is_azure:
+        # Setup embeddings - use Ollama if embed_url points to local Ollama, even if base_url is Azure
+        if embed_is_ollama:
+            Settings.embed_model = OllamaEmbedding(
+                model_name=self.embed_model,
+                base_url=self.embed_url,
+                embed_batch_size=1
+            )
+        elif embed_is_azure:
             from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
             Settings.embed_model = AzureOpenAIEmbedding(
                 api_key=self.api_key,
@@ -54,7 +62,7 @@ class DocumentIndexer:
                 engine=self.embed_model,
                 api_version="2024-02-01"
             )
-        elif is_openai:
+        elif self.api_key:
             from llama_index.embeddings.openai import OpenAIEmbedding
             Settings.embed_model = OpenAIEmbedding(
                 api_key=self.api_key,
@@ -68,8 +76,8 @@ class DocumentIndexer:
                 embed_batch_size=1
             )
         
-        # Setup LLM
-        if is_azure:
+        # Setup LLM based on base_url
+        if base_is_azure:
             from llama_index.llms.azure_openai import AzureOpenAI
             Settings.llm = AzureOpenAI(
                 api_key=self.api_key,
@@ -77,7 +85,7 @@ class DocumentIndexer:
                 engine=self.model,
                 api_version="2024-02-01"
             )
-        elif is_openai:
+        elif self.api_key and not base_is_azure:
             from llama_index.llms.openai import OpenAI
             Settings.llm = OpenAI(
                 api_key=self.api_key,
@@ -88,7 +96,7 @@ class DocumentIndexer:
             Settings.llm = Ollama(
                 model=self.model,
                 request_timeout=240.0,
-                context_window=8192,
+                context_window=self.context_length,
                 base_url=self.base_url
             )
     
@@ -719,59 +727,90 @@ class DocumentIndexer:
         
         return documents
 
-    def display_status(self):
-        """Display complete document status in markdown format"""
+    def get_dimension_info(self, collection_name=None):
+        """Get dimension information from ChromaDB collections"""
         try:
-            # Database status
+            collections = self.client.list_collections()
+            
+            if collection_name:
+                collections = [c for c in collections if c.name == collection_name]
+                if not collections:
+                    return {'error': f"Collection '{collection_name}' not found"}
+            
+            result = {
+                'db_path': os.path.abspath(self.db_path),
+                'total_collections': len(collections),
+                'collections': [],
+                'config': {
+                    'embed_model': self.embed_model,
+                    'embed_url': self.embed_url
+                }
+            }
+            
+            for collection in collections:
+                data = collection.get(limit=1, include=["embeddings", "metadatas"])
+                
+                collection_info = {
+                    'name': collection.name,
+                    'total_documents': collection.count()
+                }
+                
+                if (data['embeddings'] is not None and 
+                    len(data['embeddings']) > 0 and 
+                    data['embeddings'][0] is not None):
+                    collection_info['dimension'] = len(data['embeddings'][0])
+                else:
+                    collection_info['dimension'] = 'No embeddings'
+                
+                if data['metadatas'] and len(data['metadatas']) > 0:
+                    metadata = data['metadatas'][0]
+                    if 'embed_model' in metadata:
+                        collection_info['stored_embed_model'] = metadata['embed_model']
+                
+                result['collections'].append(collection_info)
+            
+            return result
+            
+        except Exception as e:
+            return {'error': str(e)}
+
+    def display_status(self):
+        """Get complete document status as structured data"""
+        try:
             doc_data = self.doc_collection.get(include=["metadatas"])
             status_data = self.status_collection.get(include=["metadatas"])
             
-            print(f"# Complete Document Status\n")
-            print(f"**Database Path:** {os.path.abspath(self.db_path)}")
-            print(f"**Model:** {self.model}")
-            print(f"**Collections:** Documents: {len(doc_data['ids'])}, Status: {len(status_data['ids'])}\n")
-            
-            # Processing status overview
             processed_files = self._get_processed_files()
             completed_files = self._get_completed_files()
             
-            print(f"## Processing Status\n")
-            print(f"- **Total processed files:** {len(processed_files)}")
-            print(f"- **Completed files:** {len(completed_files)}\n")
+            all_files = {}
+            for metadata in doc_data['metadatas']:
+                file_path = metadata.get('file_path')
+                if file_path:
+                    all_files[file_path] = {
+                        'name': metadata.get('file_name', 'Unknown'),
+                        'path': file_path,
+                        'processed': True,
+                        'completed': file_path in completed_files,
+                        'metadata': metadata
+                    }
             
-            # File status details
-            if processed_files:
-                print(f"## File Processing Details\n")
-                all_files = {}
-                
-                # Collect all file info
-                for metadata in doc_data['metadatas']:
-                    file_path = metadata.get('file_path')
-                    if file_path:
-                        all_files[file_path] = {
-                            'name': metadata.get('file_name', 'Unknown'),
-                            'path': file_path,
-                            'processed': True,
-                            'completed': file_path in completed_files,
-                            'doc_metadata': metadata
-                        }
-                
-                # Display file status table
-                print("| File | Status |")
-                print("|------|--------|")
-                
-                for file_path, info in sorted(all_files.items()):
-                    name = info['name']
-                    status = "✅ Complete" if info['completed'] else "⚠️ Partial"
-                    
-                    print(f"| {name} | {status} |")
-                
-                print("\n")
-                    
+            return {
+                'db_path': os.path.abspath(self.db_path),
+                'model': self.model,
+                'collections': {
+                    'documents': len(doc_data['ids']),
+                    'status': len(status_data['ids'])
+                },
+                'processing_status': {
+                    'total_processed_files': len(processed_files),
+                    'completed_files': len(completed_files)
+                },
+                'files': list(all_files.values())
+            }
+            
         except Exception as e:
-            print(f"Error displaying status: {e}")
-            import traceback
-            traceback.print_exc()
+            return {'error': str(e)}
     
 
     
@@ -780,8 +819,10 @@ class DocumentIndexer:
     def tune_parameters(self, eval_questions=None, eval_answers=None):
         """Simple parameter tuning for optimal performance"""
         if not EVALUATION_AVAILABLE:
-            print("Evaluation not available. Using default parameters.")
-            return {'similarity_top_k': 5}
+            return {
+                'error': 'Evaluation not available',
+                'default_params': {'similarity_top_k': 5}
+            }
         
         if not eval_questions or not eval_answers:
             # Use default test questions if none provided
@@ -854,11 +895,10 @@ class DocumentIndexer:
             retriever = QueryFusionRetriever(
                 [vector_retriever, bm25_retriever],
                 similarity_top_k=similarity_top_k,
-                num_queries=4,
+                num_queries=1,
                 mode="reciprocal_rerank",
                 use_async=False,
-                verbose=True,
-                query_gen_prompt=QUERY_GEN_PROMPT
+                verbose=True
             )
         
         nodes = retriever.retrieve(query_text)

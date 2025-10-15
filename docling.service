@@ -1,0 +1,19 @@
+[Unit]
+Description=Docling Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/fly/.pyenv/versions/3.12.1/bin/docling-serve -v run
+Restart=always
+RestartSec=10
+User=fly
+Group=fly
+Environment=PATH=/home/fly/.pyenv/shims:/home/fly/.pyenv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CUDA_VISIBLE_DEVICES=0
+Environment=TORCH_DEVICE=cuda
+Environment=FORCE_CUDA=1
+Environment=DOCLING_SERVE_PORT=5001
+
+[Install]
+WantedBy=multi-user.target

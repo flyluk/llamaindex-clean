@@ -8,15 +8,10 @@
             <button class="btn btn-outline-secondary btn-sm" onclick="clearChatHistory()">Clear Chat</button>
         </div>
         
-        <!-- Chat History Display -->
-        <div id="chatHistory" class="mb-3" style="display:none;">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-chat-dots"></i> Chat History
-                    <button class="btn btn-sm btn-outline-secondary float-end" onclick="toggleChatHistory()">Toggle</button>
-                </div>
-                <div class="card-body" id="chatHistoryContent" style="max-height: 200px; overflow-y: auto;">
-                </div>
+        <!-- Chat Messages -->
+        <div id="chatMessages" class="mb-3" style="max-height: 400px; overflow-y: auto; border: 1px solid #30363d; border-radius: 6px; padding: 15px; background-color: #0d1117;">
+            <div class="text-center text-muted">
+                <i class="bi bi-chat-dots"></i> Start a conversation
             </div>
         </div>
         
@@ -33,19 +28,20 @@
                     </label>
                 </div>
             </div>
+            <div class="mb-3">
+                <label for="topKSelect" class="form-label">📊 Results to retrieve (top_k):</label>
+                <select class="form-select" id="topKSelect" name="top_k">
+                    <option value="3">3</option>
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
             <button type="submit" class="btn btn-primary">Search</button>
         </form>
         
-        <div id="searchResult" class="mt-4" style="display:none;">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-chat-dots"></i> Response
-                </div>
-                <div class="card-body">
-                    <div id="resultContent" class="markdown-content p-3" style="background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; line-height: 1.6;"></div>
-                </div>
-            </div>
-        </div>
+
     </div>
     
     <div class="col-md-4">
@@ -58,11 +54,11 @@
             <button type="submit" class="btn btn-success" id="uploadBtn">Upload & Process</button>
         </form>
         
-        <div id="uploadProgress" class="mt-3" style="display:none;">
-            <div class="progress mb-2">
-                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="progressBar"></div>
+        <div id="uploadProgress" class="mt-3 text-center" style="display:none;">
+            <div class="spinner-border text-primary mb-2" role="status">
+                <span class="visually-hidden">Loading...</span>
             </div>
-            <small class="text-muted" id="progressText">Preparing upload...</small>
+            <div><small class="text-muted" id="progressText">Processing files...</small></div>
         </div>
         
         <!-- Model Selection Section -->
@@ -84,6 +80,21 @@
                     </select>
                     <button class="btn btn-sm btn-outline-primary mt-2" onclick="changeModel()">Change Model</button>
                 </div>
+                <div class="mb-3">
+                    <label for="contextSelect" class="form-label">🧠 Context Length:</label>
+                    <div class="d-flex gap-2">
+                        <select class="form-select" id="contextSelect" name="context_length">
+                            <option value="8192" {% if config.context_length == 8192 %}selected{% endif %}>8K</option>
+                            <option value="16384" {% if config.context_length == 16384 %}selected{% endif %}>16K</option>
+                            <option value="24576" {% if config.context_length == 24576 %}selected{% endif %}>24K</option>
+                            <option value="32768" {% if config.context_length == 32768 %}selected{% endif %}>32K</option>
+                            <option value="49152" {% if config.context_length == 49152 %}selected{% endif %}>48K</option>
+                            <option value="65536" {% if config.context_length == 65536 %}selected{% endif %}>64K</option>
+                            <option value="131072" {% if config.context_length == 131072 %}selected{% endif %}>128K</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" onclick="saveContextLength()">Save</button>
+                    </div>
+                </div>
             {% endif %}
         </div>
         
@@ -104,7 +115,22 @@
                             <p><strong>Processed Files:</strong> {{ knowledge_status.processed_files_count }}</p>
                             <p><strong>Completed Files:</strong> {{ knowledge_status.completed_files_count }}</p>
                             
+                            <hr>
+                            <h6>🔧 Vector Database Info</h6>
+                            {% if knowledge_status.vector_info.error %}
+                                <p class="text-warning">Error: {{ knowledge_status.vector_info.error }}</p>
+                            {% else %}
+                                <p><strong>Dimension:</strong> {{ knowledge_status.vector_info.dimension|default:"Unknown" }}</p>
+                                <p><strong>Collection:</strong> {{ knowledge_status.vector_info.collection_name|default:"Unknown" }}</p>
+                                <p><strong>Total Vectors:</strong> {{ knowledge_status.vector_info.total_documents|default:"0" }}</p>
+                                <p><strong>Embed Model:</strong> {{ knowledge_status.vector_info.embed_model|default:"Unknown" }}</p>
+                                <p><strong>Embed URL:</strong> {{ knowledge_status.vector_info.embed_url|truncatechars:40|default:"Unknown" }}</p>
+                                <p><strong>ChromaDB:</strong> {{ knowledge_status.vector_info.chroma_version|default:"Unknown" }}</p>
+                                <p><strong>Client:</strong> {{ knowledge_status.vector_info.client_type|default:"Unknown" }}</p>
+                            {% endif %}
+                            
                             {% if knowledge_status.files %}
+                                <hr>
                                 <details class="mt-2">
                                     <summary><strong>Files ({{ knowledge_status.files|length }})</strong></summary>
                                     <div class="mt-2">
@@ -153,22 +179,37 @@ function addToChatHistory(role, content) {
 }
 
 function updateChatHistoryDisplay() {
-    const historyDiv = $('#chatHistoryContent');
+    const chatDiv = $('#chatMessages');
+    
     if (chatHistory.length === 0) {
-        $('#chatHistory').hide();
+        chatDiv.html('<div class="text-center text-muted"><i class="bi bi-chat-dots"></i> Start a conversation</div>');
         return;
     }
     
-    $('#chatHistory').show();
-    historyDiv.empty();
+    chatDiv.empty();
     
     chatHistory.forEach(msg => {
-        const messageDiv = $('<div class="mb-2"></div>');
-        const role = msg.role === 'user' ? 'You' : 'Assistant';
-        const preview = msg.content.length > 100 ? msg.content.substring(0, 100) + '...' : msg.content;
-        messageDiv.html(`<strong>${role}:</strong> ${preview}`);
-        historyDiv.append(messageDiv);
+        const isUser = msg.role === 'user';
+        const messageDiv = $(`
+            <div class="d-flex ${isUser ? 'justify-content-end' : 'justify-content-start'} mb-3">
+                <div class="${isUser ? 'bg-primary' : ''} text-white p-3 rounded ${isUser ? 'user-message-clickable' : ''}" style="max-width: 80%; word-wrap: break-word; ${isUser ? 'cursor: pointer;' : ''} ${isUser ? '' : 'background-color: #21262d; border: 1px solid #30363d;'}">
+                    <div class="small mb-1">${isUser ? 'You' : 'Assistant'}</div>
+                    <div class="markdown-content">${isUser ? msg.content : marked.parse(msg.content)}</div>
+                </div>
+            </div>
+        `);
+        
+        if (isUser) {
+            messageDiv.find('.user-message-clickable').click(function() {
+                $('input[name="query"]').val(msg.content);
+            });
+        }
+        
+        chatDiv.append(messageDiv);
     });
+    
+    // Scroll to bottom
+    chatDiv.scrollTop(chatDiv[0].scrollHeight);
 }
 
 function clearChatHistory() {
@@ -176,41 +217,56 @@ function clearChatHistory() {
     updateChatHistoryDisplay();
 }
 
-function toggleChatHistory() {
-    $('#chatHistoryContent').toggle();
-}
-
 $('#searchForm').submit(function(e) {
     e.preventDefault();
     const query = $('input[name="query"]').val();
     
-    $('#resultContent').html('<i class="bi bi-hourglass-split"></i> Searching...');
-    $('#searchResult').show();
+    // Add user message immediately
+    addToChatHistory('user', query);
+    
+    // Add loading message
+    const loadingId = 'loading-' + Date.now();
+    const loadingDiv = $(`
+        <div class="d-flex justify-content-start mb-3" id="${loadingId}">
+            <div class="text-white p-3 rounded" style="max-width: 80%; background-color: #21262d; border: 1px solid #30363d;">
+                <div class="small mb-1">Assistant</div>
+                <div><i class="bi bi-hourglass-split"></i> Searching...</div>
+            </div>
+        </div>
+    `);
+    $('#chatMessages').append(loadingDiv);
+    $('#chatMessages').scrollTop($('#chatMessages')[0].scrollHeight);
     
     const chatHistoryText = formatChatHistory();
     
     $.post('/search/', {
         'query': query,
         'use_direct_vector': $('#useDirectVector').is(':checked'),
+        'top_k': $('#topKSelect').val(),
+        'context_length': $('#contextSelect').val(),
         'chat_history': chatHistoryText,
         'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
     }, function(data) {
+        // Remove loading message
+        $(`#${loadingId}`).remove();
+        
         if (data.success) {
-            $('#resultContent').html(marked.parse(data.result));
-            
-            // Add to chat history
-            addToChatHistory('user', query);
+            // Add assistant response
             addToChatHistory('assistant', data.result);
             
-            // Add to search history with chat history
+            // Add to search history
             const kb = $('input[name="kb_selection"]:checked').val() || 'default';
             const model = '{{ config.default_model }}';
             addToHistory(query, data.result, kb, model, chatHistoryText);
         } else {
-            $('#resultContent').html('<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Error: ' + data.error + '</div>');
+            addToChatHistory('assistant', `Error: ${data.error}`);
         }
+        
+        // Clear input
+        $('input[name="query"]').val('');
     }).fail(function() {
-        $('#resultContent').html('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Connection error. Please try again.</div>');
+        $(`#${loadingId}`).remove();
+        addToChatHistory('assistant', 'Connection error. Please try again.');
     });
 });
 
@@ -231,8 +287,7 @@ $('#uploadForm').submit(function(e) {
     
     $('#uploadBtn').prop('disabled', true).text('Processing...');
     $('#uploadProgress').show();
-    $('#progressBar').css('width', '10%');
-    $('#progressText').text('Uploading files...');
+    $('#progressText').text('Processing files...');
     
     $.ajax({
         url: '/upload/',
@@ -240,19 +295,8 @@ $('#uploadForm').submit(function(e) {
         data: formData,
         processData: false,
         contentType: false,
-        xhr: function() {
-            const xhr = new window.XMLHttpRequest();
-            xhr.upload.addEventListener('progress', function(evt) {
-                if (evt.lengthComputable) {
-                    const percentComplete = (evt.loaded / evt.total) * 50; // Upload is 50% of total
-                    $('#progressBar').css('width', percentComplete + '%');
-                    $('#progressText').text(`Uploading... ${Math.round(percentComplete)}%`);
-                }
-            }, false);
-            return xhr;
-        },
+
         success: function(data) {
-            $('#progressBar').css('width', '100%');
             $('#progressText').text('Upload completed successfully!');
             setTimeout(() => {
                 $('#uploadProgress').hide();
@@ -262,19 +306,15 @@ $('#uploadForm').submit(function(e) {
             }, 2000);
         },
         error: function() {
-            $('#progressBar').removeClass('progress-bar-animated').addClass('bg-danger');
             $('#progressText').text('Upload failed. Please try again.');
             $('#uploadBtn').prop('disabled', false).text('Upload & Process');
+            $('#uploadProgress').hide();
         }
     });
 });
 
 // Function to show history result
 window.showHistoryResult = function(query, result, kb, model, savedChatHistory) {
-    $('input[name="query"]').val(query);
-    $('#resultContent').html(marked.parse(result));
-    $('#searchResult').show();
-    
     // Restore chat history if available
     if (savedChatHistory) {
         chatHistory = [];
@@ -288,9 +328,8 @@ window.showHistoryResult = function(query, result, kb, model, savedChatHistory) 
         updateChatHistoryDisplay();
     }
     
-    // Show history info
-    const historyInfo = `<div class="alert alert-info"><i class="bi bi-clock-history"></i> From history - KB: ${kb}, Model: ${model}</div>`;
-    $('#searchResult .card-body').prepend(historyInfo);
+    // Add history info message
+    addToChatHistory('assistant', `📜 *From history - KB: ${kb}, Model: ${model}*\n\n${result}`);
 };
 
 // Function to delete file
@@ -318,7 +357,7 @@ window.deleteFile = function(filePath) {
 window.changeModel = function() {
     const selectedModel = $('#modelSelect').val();
     
-    $.post('/change_model/', {
+    $.post('/change-model/', {
         'model': selectedModel,
         'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
     }, function(data) {
@@ -327,6 +366,24 @@ window.changeModel = function() {
             location.reload();
         } else {
             alert('Error changing model');
+        }
+    }).fail(function() {
+        alert('Connection error. Please try again.');
+    });
+};
+
+// Function to save context length
+window.saveContextLength = function() {
+    const contextLength = $('#contextSelect').val();
+    
+    $.post('/update-config/', {
+        'context_length': contextLength,
+        'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+    }, function(data) {
+        if (data.success) {
+            alert('Context length saved successfully!');
+        } else {
+            alert('Error saving context length');
         }
     }).fail(function() {
         alert('Connection error. Please try again.');

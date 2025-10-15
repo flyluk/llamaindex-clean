@@ -4,6 +4,7 @@ import re
 import requests
 import tempfile
 import shutil
+import chromadb
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.contrib import messages
@@ -29,11 +30,24 @@ def load_config():
         "api_key": "",
         "default_model": "deepseek-r1:14b",
         "embed_model": "nomic-embed-text",
-        "default_kb": "default"
+        "default_kb": "default",
+        "context_length": 32768,
+        "ollama_library": [
+            "llama3.2:3b", "llama3.2:1b", "llama3.1:8b", "llama3.1:70b",
+            "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "qwen2.5:72b",
+            "deepseek-r1:1.5b", "deepseek-r1:7b", "deepseek-r1:8b", "deepseek-r1:14b", "deepseek-r1:32b",
+            "mistral:7b", "mixtral:8x7b", "codellama:7b", "codellama:13b",
+            "phi3:3.8b", "phi3:14b", "gemma2:2b", "gemma2:9b", "gemma2:27b",
+            "nomic-embed-text", "mxbai-embed-large", "all-minilm"
+        ]
     }
     if os.path.exists(config_file):
         with open(config_file, 'r') as f:
-            return {**default_config, **json.load(f)}
+            loaded_config = json.load(f)
+            # Ensure embed_library exists in loaded config
+            if 'embed_library' not in loaded_config:
+                loaded_config['embed_library'] = default_config['embed_library']
+            return {**default_config, **loaded_config}
     return default_config
 
 def is_azure_endpoint(config):
@@ -51,14 +65,15 @@ def get_ollama_models(ollama_url="http://localhost:11434"):
     return ["deepseek-r1:14b", "gpt-oss:20b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "deepseek-r1:8b"]
 
 def get_ollama_library():
-    return [
+    config = load_config()
+    return config.get('ollama_library', [
         "llama3.2:3b", "llama3.2:1b", "llama3.1:8b", "llama3.1:70b",
         "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "qwen2.5:72b",
         "deepseek-r1:1.5b", "deepseek-r1:7b", "deepseek-r1:8b", "deepseek-r1:14b", "deepseek-r1:32b",
         "mistral:7b", "mixtral:8x7b", "codellama:7b", "codellama:13b",
         "phi3:3.8b", "phi3:14b", "gemma2:2b", "gemma2:9b", "gemma2:27b",
         "nomic-embed-text", "mxbai-embed-large", "all-minilm"
-    ]
+    ])
 
 def get_knowledge_bases():
     import glob
@@ -162,8 +177,10 @@ def search(request):
     if request.method == 'POST':
         query = request.POST.get('query')
         use_vector_only = request.POST.get('use_direct_vector') == 'on'
+        top_k = int(request.POST.get('top_k', 10))
+        context_length = int(request.POST.get('context_length', 32768))
         chat_history = request.POST.get('chat_history', '')
-        print(f"DEBUG: Search query: {query}, use_vector_only: {use_vector_only}")
+        print(f"DEBUG: Search query: {query}, use_vector_only: {use_vector_only}, top_k: {top_k}, context_length: {context_length}")
         
         if not DocumentIndexer:
             print("DEBUG: DocumentIndexer not available")
@@ -185,12 +202,13 @@ def search(request):
                 base_url=config["base_url"],
                 embed_url=config.get("embed_url", config["base_url"]),
                 api_key=config.get("api_key"),
-                embed_model=config.get("embed_model", "nomic-embed-text")
+                embed_model=config.get("embed_model", "nomic-embed-text"),
+                context_length=context_length
             )
             print("DEBUG: Loading index")
             indexer.load_or_create_index()
             print("DEBUG: Querying")
-            result = indexer.query(query, use_vector_only, 50, chat_history if chat_history else None)
+            result = indexer.query(query, use_vector_only, top_k, chat_history if chat_history else None)
             formatted_result = format_think_tags(result)
             print(f"DEBUG: Query result: {formatted_result}")
             return JsonResponse({'success': True, 'result': formatted_result})
@@ -379,6 +397,10 @@ def update_config(request):
         config['base_url'] = request.POST.get('base_url')
     if 'embed_url' in request.POST:
         config['embed_url'] = request.POST.get('embed_url')
+    if 'embed_model' in request.POST:
+        config['embed_model'] = request.POST.get('embed_model')
+    if 'context_length' in request.POST:
+        config['context_length'] = int(request.POST.get('context_length'))
     
     with open(config_file, 'w') as f:
         json.dump(config, f, indent=2)
@@ -574,6 +596,37 @@ def get_chunks(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
+def get_vector_info(indexer):
+    """Get vector database info using indexer's get_dimension_info method"""
+    try:
+        # Use the indexer's get_dimension_info method
+        dim_info = indexer.get_dimension_info(indexer.doc_collection.name)
+        
+        if 'error' in dim_info:
+            return dim_info
+        
+        # Extract info for the current collection
+        current_collection = None
+        for collection in dim_info['collections']:
+            if collection['name'] == indexer.doc_collection.name:
+                current_collection = collection
+                break
+        
+        if not current_collection:
+            return {'error': 'Current collection not found'}
+        
+        return {
+            'dimension': current_collection['dimension'],
+            'total_documents': current_collection['total_documents'],
+            'collection_name': current_collection['name'],
+            'embed_model': dim_info['config']['embed_model'],
+            'embed_url': dim_info['config']['embed_url'],
+            'client_type': type(indexer.client).__name__,
+            'chroma_version': getattr(chromadb, '__version__', 'Unknown')
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
 def get_status_data(indexer):
     """Get status data as JSON instead of printing"""
     try:
@@ -594,6 +647,9 @@ def get_status_data(indexer):
                     'completed': file_path in completed_files
                 }
         
+        # Get vector database technical info using indexer's get_dimension_info method
+        vector_info = get_vector_info(indexer)
+        
         return {
             'db_path': os.path.abspath(indexer.db_path),
             'model': indexer.model,
@@ -601,6 +657,7 @@ def get_status_data(indexer):
             'status_count': len(status_data['ids']),
             'processed_files_count': len(processed_files),
             'completed_files_count': len(completed_files),
+            'vector_info': vector_info,
             'files': list(all_files.values())
         }
     except Exception as e:

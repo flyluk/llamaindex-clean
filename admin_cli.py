@@ -7,8 +7,9 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description='Database administration')
-    parser.add_argument('command', choices=['summaries', 'stats', 'clear-db', 'delete'], help='Command to execute')
+    parser.add_argument('command', choices=['summaries', 'stats', 'clear-db', 'delete', 'dimensions'], help='Command to execute')
     parser.add_argument('--file', '-f', help='File path to delete (for delete command)')
+    parser.add_argument('--collection', '-c', help='Collection name (for dimensions command)')
     parser.add_argument('--db-path', '-d', default='./chroma_db', help='Database path')
     parser.add_argument('--model', '-m', default='gpt-oss:20b', help='Model to use')
     args = parser.parse_args()
@@ -36,6 +37,9 @@ def main():
             print(f"Successfully deleted: {args.file}")
         else:
             print(f"File not found in database: {args.file}")
+    
+    elif args.command == "dimensions":
+        indexer.get_dimension_info(args.collection)
     
     elif args.command == "clear-db":
         if os.path.exists(args.db_path):

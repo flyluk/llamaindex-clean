@@ -78,18 +78,7 @@
                     </div>
                 </div>
                 
-                <div class="card mt-3">
-                    <div class="card-header">
-                        🤖 Model
-                    </div>
-                    <div class="card-body">
-                        <select class="form-select" id="modelSelect">
-                            {% for model in installed_models %}
-                                <option {% if model == config.default_model %}selected{% endif %}>{{ model }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
+
                 
                 <div class="card mt-3">
                     <div class="card-header d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#configCollapse" style="cursor: pointer;">
@@ -104,18 +93,26 @@
                     <div class="collapse" id="configCollapse">
                         <div class="card-body">
                             <div class="mb-2">
+                                <label class="form-label">🔗 Base URL:</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" id="baseUrl" value="{{ config.base_url }}" readonly>
+                                    <button class="btn btn-success d-none" id="saveBaseBtn"><i class="bi bi-check"></i></button>
+                                </div>
+                            </div>
+                            <div class="mb-2">
                                 <label class="form-label">🔗 Embed URL:</label>
                                 <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control" id="embedUrl" value="{{ config.embed_base_url }}" readonly>
+                                    <input type="text" class="form-control" id="embedUrl" value="{{ config.embed_url }}" readonly>
                                     <button class="btn btn-success d-none" id="saveEmbedBtn"><i class="bi bi-check"></i></button>
                                 </div>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label">🔗 Ollama URL:</label>
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control" id="ollamaUrl" value="{{ config.ollama_base_url }}" readonly>
-                                    <button class="btn btn-success d-none" id="saveOllamaBtn"><i class="bi bi-check"></i></button>
-                                </div>
+                                <label class="form-label">🤖 Embed Model:</label>
+                                <select class="form-select form-select-sm" id="embedModelSelect">
+                                    {% for model in config.embed_library %}
+                                        <option value="{{ model }}" {% if model == config.embed_model %}selected{% endif %}>{{ model }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -144,49 +141,47 @@
     
     <script>
     $(document).ready(function() {
-        $('#modelSelect').change(function() {
-            const selectedModel = $(this).val();
-            $.post('/change-model/', {
-                'model': selectedModel,
-                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
-            }).done(function() {
-                location.reload();
-            });
-        });
+
         
         $('#editUrlBtn').click(function() {
-            $('#embedUrl, #ollamaUrl').prop('readonly', false);
-            $('#saveEmbedBtn, #saveOllamaBtn').removeClass('d-none');
+            $('#baseUrl, #embedUrl').prop('readonly', false);
+            $('#embedModelSelect').prop('disabled', false);
+            $('#saveBaseBtn, #saveEmbedBtn').removeClass('d-none');
             $(this).addClass('d-none');
         });
         
-        $('#saveEmbedBtn').click(function() {
-            const embedUrl = $('#embedUrl').val();
+        $('#saveBaseBtn').click(function() {
+            const baseUrl = $('#baseUrl').val();
             $.post('/update-config/', {
-                'embed_base_url': embedUrl,
+                'base_url': baseUrl,
                 'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
             }).done(function() {
-                $('#embedUrl').prop('readonly', true);
-                $('#saveEmbedBtn').addClass('d-none');
-                if ($('#saveOllamaBtn').hasClass('d-none')) {
-                    $('#editUrlBtn').removeClass('d-none');
-                }
-            });
-        });
-        
-        $('#saveOllamaBtn').click(function() {
-            const ollamaUrl = $('#ollamaUrl').val();
-            $.post('/update-config/', {
-                'ollama_base_url': ollamaUrl,
-                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
-            }).done(function() {
-                $('#ollamaUrl').prop('readonly', true);
-                $('#saveOllamaBtn').addClass('d-none');
+                $('#baseUrl').prop('readonly', true);
+                $('#saveBaseBtn').addClass('d-none');
                 if ($('#saveEmbedBtn').hasClass('d-none')) {
                     $('#editUrlBtn').removeClass('d-none');
                 }
             });
         });
+        
+        $('#saveEmbedBtn').click(function() {
+            const embedUrl = $('#embedUrl').val();
+            const embedModel = $('#embedModelSelect').val();
+            $.post('/update-config/', {
+                'embed_url': embedUrl,
+                'embed_model': embedModel,
+                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+            }).done(function() {
+                $('#embedUrl').prop('readonly', true);
+                $('#embedModelSelect').prop('disabled', true);
+                $('#saveEmbedBtn').addClass('d-none');
+                if ($('#saveBaseBtn').hasClass('d-none')) {
+                    $('#editUrlBtn').removeClass('d-none');
+                }
+            });
+        });
+        
+
         
         $('input[name="kb_selection"]').change(function() {
             const selectedKb = $(this).val();

@@ -10,6 +10,7 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Advanced Parsing**: Docling for PDF, Word, and complex document formats
 - **Hybrid Search**: Query fusion with multiple query generation and reciprocal reranking
 - **Chat History**: Conversational context maintained across queries with RAG prompt template
+- **Clickable Chat Messages**: Click user messages to populate search box for easy re-querying
 - **Smart Citations**: Inline source citations with proper document references
 - **Large Document Support**: Smart chunking for large files
 - **Auto-Summary Generation**: Automatically creates summaries when missing
@@ -21,6 +22,7 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **JSON File Persistence**: Search history with chat context saved to JSON file
 - **Web Interface**: Enhanced Streamlit frontend with improved UX
 - **Django Alternative**: Modern Django web interface with dark theme and progress indicators
+- **Context Length Configuration**: Adjustable context length with save button in search interface
 - **Model Management**: Visual progress bars for Ollama model pulling and deletion
 - **Chunk Browser**: Interactive document chunk viewer for database inspection
 - **CLI Tools**: Document indexing, structure extraction, and database administration
@@ -187,6 +189,7 @@ The application uses `config.json` for unified service configuration:
 - **default_model**: LLM model name
 - **embed_model**: Embedding model name
 - **default_kb**: Default knowledge base
+- **context_length**: Model context length (8K-128K tokens)
 - **Auto-Save**: Settings persist between sessions
 - **Search History**: Stored in `history.json` with 50-entry limit
 
@@ -269,6 +272,8 @@ sudo systemctl status docling
 - **Hybrid Search (Default)**: Query fusion with 4 query variations and reciprocal reranking for enhanced retrieval accuracy
 - **Vector Search Only**: Pure vector search (checkbox option: "Use vector search only")
 - **Chat History Context**: Previous conversation context included in queries
+- **Clickable Messages**: Click any user message in chat to populate search box
+- **Context Length Control**: Adjustable context length (8K-128K) with save functionality
 - **Section Search**: Direct section number matching
 - **Legal Document Search**: Structure-aware search for legal documents
 - **Smart Citations**: Automatic inline citations with [source_id] format
