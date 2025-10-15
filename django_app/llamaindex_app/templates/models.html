@@ -5,6 +5,25 @@
 
 <button class="btn btn-primary mb-3" onclick="location.reload()">🔄 Refresh Models</button>
 
+<div class="card mb-4">
+    <div class="card-header">
+        📥 Pull Custom Model
+    </div>
+    <div class="card-body">
+        <div class="input-group">
+            <input type="text" class="form-control" id="customModelName" placeholder="Enter model name (e.g., llama3.2:1b)">
+            <button class="btn btn-success" onclick="pullCustomModel()">📥 Pull Model</button>
+        </div>
+        <div class="mt-2" id="customModelLoading" style="display: none;">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <small class="text-muted ms-2">Pulling custom model...</small>
+        </div>
+        <small class="text-muted">Enter any Ollama model name to pull and add to library</small>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-6">
         <h4>📥 Available Models</h4>
@@ -84,6 +103,40 @@ function deleteModel(modelName) {
             } else {
                 alert('Error: ' + data.error);
             }
+        });
+    }
+}
+
+function pullCustomModel() {
+    const modelName = $('#customModelName').val().trim();
+    if (!modelName) {
+        alert('Please enter a model name');
+        return;
+    }
+    
+    if (confirm(`Pull custom model ${modelName}?`)) {
+        $('#customModelName').prop('disabled', true);
+        $('button[onclick="pullCustomModel()"]').prop('disabled', true).text('📥 Pulling...');
+        $('#customModelLoading').show();
+        
+        $.post('/pull_custom_model/', {
+            'model_name': modelName,
+            'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
+        }, function(data) {
+            $('#customModelLoading').hide();
+            if (data.success) {
+                alert(`Successfully pulled ${modelName} and added to library!`);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+                $('#customModelName').prop('disabled', false);
+                $('button[onclick="pullCustomModel()"]').prop('disabled', false).text('📥 Pull Model');
+            }
+        }).fail(function() {
+            $('#customModelLoading').hide();
+            alert('Connection error. Please try again.');
+            $('#customModelName').prop('disabled', false);
+            $('button[onclick="pullCustomModel()"]').prop('disabled', false).text('📥 Pull Model');
         });
     }
 }

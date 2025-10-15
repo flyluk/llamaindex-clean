@@ -1,0 +1,100 @@
+feat: Add LLM-powered follow-ups, flexible processing, and multi-service support
+
+Major enhancements to Django interface with improved UX and multi-service compatibility:
+
+## New Features
+
+### LLM-Powered Follow-up Prompts
+- Auto-generate contextual follow-up questions after each assistant response
+- Clickable buttons populate search box for seamless conversation flow
+- Multi-service support: Ollama, OpenAI, and Azure OpenAI detection
+- Loading indicators during generation
+
+### Flexible Document Processing
+- Added sentence splitter option as alternative to structure extraction
+- Checkbox in upload form allows per-document processing choice
+- Structure extraction (default): Best for formal documents with hierarchy
+- Sentence splitter: Faster processing for general text
+
+### Custom Model Management
+- Pull any Ollama model by name via text input in models page
+- Automatic addition to config.json ollama_library array
+- Loading spinner with real-time feedback
+- Improved error handling with JSON response validation
+
+### Context Length Configuration
+- Moved from server config to search interface for better accessibility
+- Dropdown with 8K, 16K, 32K, 64K, 128K token options
+- Save button persists preference to config.json
+- Per-session adjustability
+
+### Unified Collections
+- Removed OpenAI-specific collection suffix (_openai)
+- All services (Ollama, OpenAI, Azure) use same "documents" and "status" collections
+- Prevents dimension mismatch errors when switching services
+- Simplified collection management
+
+## Improvements
+
+### Model Management
+- Enhanced get_ollama_models with better error handling
+- Added debug output for troubleshooting
+- Removed fallback hardcoded model list
+- JSON response validation in pull_model functions
+
+### Multi-Service Support
+- Automatic service detection based on base_url and api_key
+- Azure OpenAI: Detected by "azure" in URL
+- OpenAI: API key with non-Azure URL
+- Ollama: No API key required
+- Consistent behavior across all endpoints
+
+### User Experience
+- Clickable user messages populate search box for re-querying
+- Follow-up prompts enhance conversation flow
+- Real-time loading indicators
+- Improved error messages
+
+## Technical Changes
+
+### Files Modified
+- django_app/llamaindex_app/views.py
+  - Added generate_followup endpoint with service detection
+  - Updated upload view with use_sentence_splitter parameter
+  - Enhanced pull_custom_model with config.json integration
+  - Improved get_ollama_models error handling
+  - JSON response validation in pull functions
+
+- django_app/llamaindex_app/templates/index.html
+  - Context length dropdown and save button in search interface
+  - Follow-up prompt generation with loading indicators
+  - Clickable user messages
+  - Sentence splitter checkbox in upload form
+
+- django_app/llamaindex_app/urls.py
+  - Added pull_custom_model route
+  - Added generate-followup route
+
+- document_indexer.py
+  - Added use_sentence_splitter parameter to __init__
+  - Conditional processing logic in process_single_file and process_files
+  - Unified collection names (removed _openai suffix)
+
+- config.json
+  - Added context_length field
+  - Added ollama_library array
+  - Added embed_library array
+
+- README.md
+  - Updated features list with new capabilities
+  - Added Document Processing Options section
+  - Updated Configuration Options
+  - Enhanced Architecture section
+
+## Breaking Changes
+None - All changes are backward compatible
+
+## Migration Notes
+- Existing collections remain compatible
+- Config.json automatically updated with new fields
+- No manual intervention required

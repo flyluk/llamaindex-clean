@@ -59,10 +59,13 @@ def get_ollama_models(ollama_url="http://localhost:11434"):
         response = requests.get(f"{ollama_url}/api/tags", timeout=5)
         if response.status_code == 200:
             models = [model["name"] for model in response.json()["models"]]
-            return models if models else ["deepseek-r1:14b"]
-    except:
-        pass
-    return ["deepseek-r1:14b", "gpt-oss:20b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "deepseek-r1:8b"]
+            print(f"DEBUG: Retrieved {len(models)} models from Ollama: {models}")
+            return models if models else []
+        else:
+            print(f"DEBUG: Ollama API returned status {response.status_code}")
+    except Exception as e:
+        print(f"DEBUG: Failed to connect to Ollama at {ollama_url}: {e}")
+    return []
 
 def get_ollama_library():
     config = load_config()
@@ -223,6 +226,7 @@ def search(request):
 def upload(request):
     if request.method == 'POST':
         files = request.FILES.getlist('files')
+        use_sentence_splitter = request.POST.get('use_sentence_splitter') == 'true'
         config = load_config()
         
         kb_name = config.get('default_kb', 'default')
@@ -235,7 +239,8 @@ def upload(request):
             base_url=config["base_url"],
             embed_url=config.get("embed_url", config["base_url"]),
             api_key=config.get("api_key"),
-            embed_model=config.get("embed_model", "nomic-embed-text")
+            embed_model=config.get("embed_model", "nomic-embed-text"),
+            use_sentence_splitter=use_sentence_splitter
         )
         indexer.load_or_create_index()
         
@@ -324,7 +329,14 @@ def pull_model(request):
         response = requests.post(f"{config['base_url']}/api/pull", 
                                json={"name": model_name}, timeout=300)
         if response.status_code == 200:
-            return JsonResponse({'success': True, 'message': f'Successfully pulled {model_name}'})
+            try:
+                result = response.json()
+                if result.get('status') == 'success' or 'error' not in result:
+                    return JsonResponse({'success': True, 'message': f'Successfully pulled {model_name}'})
+                else:
+                    return JsonResponse({'success': False, 'error': result.get('error', 'Unknown error')})
+            except:
+                return JsonResponse({'success': True, 'message': f'Successfully pulled {model_name}'})
         else:
             return JsonResponse({'success': False, 'error': f'Failed to pull {model_name}'})
     except Exception as e:
@@ -343,6 +355,91 @@ def delete_model(request):
             return JsonResponse({'success': True, 'message': f'Successfully deleted {model_name}'})
         else:
             return JsonResponse({'success': False, 'error': f'Failed to delete {model_name}'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+@require_POST
+def generate_followup(request):
+    query = request.POST.get('query')
+    response = request.POST.get('response')
+    config = load_config()
+    
+    try:
+        prompt = f"""Based on this question and answer, generate exactly 3 short follow-up questions that a user might want to ask next. Return only the questions, one per line, without numbering or bullet points.
+
+Original Question: {query}
+
+Answer: {response[:500]}...
+
+Generate 3 follow-up questions:"""
+        
+        # Detect service type and use appropriate LLM
+        base_is_azure = "azure" in config["base_url"].lower()
+        
+        if base_is_azure:
+            from llama_index.llms.azure_openai import AzureOpenAI
+            llm = AzureOpenAI(
+                api_key=config.get("api_key"),
+                azure_endpoint=config["base_url"],
+                engine=config["default_model"],
+                api_version="2024-02-01"
+            )
+        elif config.get("api_key"):
+            from llama_index.llms.openai import OpenAI
+            llm = OpenAI(
+                api_key=config["api_key"],
+                model=config["default_model"],
+                api_base=config["base_url"]
+            )
+        else:
+            from llama_index.llms.ollama import Ollama
+            llm = Ollama(
+                model=config["default_model"],
+                base_url=config["base_url"],
+                request_timeout=30.0
+            )
+        
+        result = llm.complete(prompt)
+        prompts = [line.strip() for line in str(result).strip().split('\n') if line.strip() and not line.strip().startswith(('#', '-', '*'))]
+        prompts = prompts[:3]  # Take only first 3
+        
+        return JsonResponse({'success': True, 'prompts': prompts})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+@require_POST
+def pull_custom_model(request):
+    model_name = request.POST.get('model_name')
+    config = load_config()
+    config_file = os.path.join(os.path.dirname(__file__), '..', '..', 'config.json')
+    
+    try:
+        # Try to pull the model
+        response = requests.post(f"{config['base_url']}/api/pull", 
+                               json={"name": model_name}, timeout=300)
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                if result.get('status') == 'success' or 'error' not in result:
+                    # Add to ollama_library if not already present
+                    if model_name not in config.get('ollama_library', []):
+                        config.setdefault('ollama_library', []).append(model_name)
+                        with open(config_file, 'w') as f:
+                            json.dump(config, f, indent=2)
+                    return JsonResponse({'success': True, 'message': f'Successfully pulled {model_name}'})
+                else:
+                    return JsonResponse({'success': False, 'error': result.get('error', 'Model not found or failed to pull')})
+            except:
+                # Add to ollama_library if not already present
+                if model_name not in config.get('ollama_library', []):
+                    config.setdefault('ollama_library', []).append(model_name)
+                    with open(config_file, 'w') as f:
+                        json.dump(config, f, indent=2)
+                return JsonResponse({'success': True, 'message': f'Successfully pulled {model_name}'})
+        else:
+            return JsonResponse({'success': False, 'error': f'Model {model_name} not found or failed to pull'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 

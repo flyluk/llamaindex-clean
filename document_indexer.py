@@ -27,7 +27,7 @@ except ImportError:
     EVALUATION_AVAILABLE = False
 
 class DocumentIndexer:
-    def __init__(self, target_dir="", db_path="./chroma_db", model="deepseek-r1:7b", base_url="http://localhost:11434", embed_url=None, api_key=None, embed_model="embeddinggemma", context_length=32768):
+    def __init__(self, target_dir="", db_path="./chroma_db", model="deepseek-r1:7b", base_url="http://localhost:11434", embed_url=None, api_key=None, embed_model="embeddinggemma", context_length=32768, use_sentence_splitter=False):
         self.target_dir = target_dir
         self.db_path = db_path
         self.model = model
@@ -36,11 +36,12 @@ class DocumentIndexer:
         self.api_key = api_key
         self.embed_model = embed_model
         self.context_length = context_length
+        self.use_sentence_splitter = use_sentence_splitter
         self._setup_settings()
         self._setup_storage()
         
     def _setup_settings(self):
-        Settings.node_parser = SentenceSplitter(chunk_size=4000, chunk_overlap=500)
+        Settings.node_parser = SentenceSplitter(chunk_size=3000, chunk_overlap=300)
         
         # Auto-detect service types
         base_is_azure = "azure" in self.base_url.lower()
@@ -103,13 +104,8 @@ class DocumentIndexer:
     def _setup_storage(self):
         self.client = chromadb.PersistentClient(path=self.db_path)
         
-        # Determine collection suffix based on service type
-        collection_suffix = ""
-        if self.api_key:
-            collection_suffix = "_openai"
-        
-        collection_name = f"documents{collection_suffix}"
-        status_collection_name = f"status{collection_suffix}"
+        collection_name = "documents"
+        status_collection_name = "status"
         
         try:
             self.doc_collection = self.client.get_or_create_collection(collection_name)
@@ -278,32 +274,37 @@ class DocumentIndexer:
                 }
             )
             
-            # Detect structure and process
-            detector = StructureDetector()
-            detection_result = detector.detect_structure(doc.text)
-            
-            is_legal = self._detect_legal_document(doc.text)
-            has_structure = (detection_result.get('grouped_headers') and 
-                           len(detection_result['grouped_headers']) > 0)
-            
-            if is_legal:
-                print(f"📋 Legal document detected")
-                structure = extract_structure(doc.text)
-                if structure:
-                    print(f"✅ Extracted {len(structure)} legal structural elements")
-                    structured_documents = self.create_structured_documents(structure, file_path=file_path)
-                    print(f"➡️ Created {len(structured_documents)} structured documents")
+            # Use sentence splitter if enabled, otherwise use structure extraction
+            if self.use_sentence_splitter:
+                print(f"📝 Using sentence splitter")
+                self.index.insert(doc)
+            else:
+                # Detect structure and process
+                detector = StructureDetector()
+                detection_result = detector.detect_structure(doc.text)
+                
+                is_legal = self._detect_legal_document(doc.text)
+                has_structure = (detection_result.get('grouped_headers') and 
+                               len(detection_result['grouped_headers']) > 0)
+                
+                if is_legal:
+                    print(f"📋 Legal document detected")
+                    structure = extract_structure(doc.text)
+                    if structure:
+                        print(f"✅ Extracted {len(structure)} legal structural elements")
+                        structured_documents = self.create_structured_documents(structure, file_path=file_path)
+                        print(f"➡️ Created {len(structured_documents)} structured documents")
+                        for struct_doc in structured_documents:
+                            self.index.insert(struct_doc)
+                elif has_structure:
+                    print(f"📄 Structured document detected")
+                    structured_documents = self._create_general_structured_documents(detection_result, doc)
+                    print(f"✅ Created {len(structured_documents)} general structured documents")
                     for struct_doc in structured_documents:
                         self.index.insert(struct_doc)
-            elif has_structure:
-                print(f"📄 Structured document detected")
-                structured_documents = self._create_general_structured_documents(detection_result, doc)
-                print(f"✅ Created {len(structured_documents)} general structured documents")
-                for struct_doc in structured_documents:
-                    self.index.insert(struct_doc)
-            else:
-                print(f"📝 Plain document")
-                self.index.insert(doc)
+                else:
+                    print(f"📝 Plain document")
+                    self.index.insert(doc)
             
             self._mark_file_complete(file_path)
             print(f"✅ Successfully processed: {os.path.basename(file_path)}")
@@ -336,33 +337,38 @@ class DocumentIndexer:
                 print(f"Processing {i}/{len(remaining_docs)}: {doc.metadata.get('file_name', 'Unknown')}")
                 
                 try:
-                    # Detect document structure for all documents
-                    detector = StructureDetector()
-                    detection_result = detector.detect_structure(doc.text)
-                    
-                    # Check if document has any structure (legal or general)
-                    is_legal = self._detect_legal_document(doc.text)
-                    has_structure = (detection_result.get('grouped_headers') and 
-                                   len(detection_result['grouped_headers']) > 0)
-                    
-                    if is_legal:
-                        print(f"📋 Legal document detected: {doc.metadata.get('file_name')}")
-                        structure = extract_structure(doc.text)
-                        if structure:
-                            print(f"✅ Extracted {len(structure)} legal structural elements")
-                            structured_documents = self.create_structured_documents(structure, file_path=doc.metadata.get('file_path'))
-                            print(f"➡️ Created {len(structured_documents)} structured documents")
+                    # Use sentence splitter if enabled, otherwise use structure extraction
+                    if self.use_sentence_splitter:
+                        print(f"📝 Using sentence splitter: {doc.metadata.get('file_name')}")
+                        self.index.insert(doc)
+                    else:
+                        # Detect document structure for all documents
+                        detector = StructureDetector()
+                        detection_result = detector.detect_structure(doc.text)
+                        
+                        # Check if document has any structure (legal or general)
+                        is_legal = self._detect_legal_document(doc.text)
+                        has_structure = (detection_result.get('grouped_headers') and 
+                                       len(detection_result['grouped_headers']) > 0)
+                        
+                        if is_legal:
+                            print(f"📋 Legal document detected: {doc.metadata.get('file_name')}")
+                            structure = extract_structure(doc.text)
+                            if structure:
+                                print(f"✅ Extracted {len(structure)} legal structural elements")
+                                structured_documents = self.create_structured_documents(structure, file_path=doc.metadata.get('file_path'))
+                                print(f"➡️ Created {len(structured_documents)} structured documents")
+                                for struct_doc in structured_documents:
+                                    self.index.insert(struct_doc)
+                        elif has_structure:
+                            print(f"📄 Structured document detected: {doc.metadata.get('file_name')}")
+                            structured_documents = self._create_general_structured_documents(detection_result, doc)
+                            print(f"✅ Created {len(structured_documents)} general structured documents")
                             for struct_doc in structured_documents:
                                 self.index.insert(struct_doc)
-                    elif has_structure:
-                        print(f"📄 Structured document detected: {doc.metadata.get('file_name')}")
-                        structured_documents = self._create_general_structured_documents(detection_result, doc)
-                        print(f"✅ Created {len(structured_documents)} general structured documents")
-                        for struct_doc in structured_documents:
-                            self.index.insert(struct_doc)
-                    else:
-                        print(f"📝 Plain document: {doc.metadata.get('file_name')}")
-                        self.index.insert(doc)
+                        else:
+                            print(f"📝 Plain document: {doc.metadata.get('file_name')}")
+                            self.index.insert(doc)
                         
                     self._mark_file_complete(doc.metadata.get('file_path'))
                 except Exception as e:

@@ -11,6 +11,7 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Hybrid Search**: Query fusion with multiple query generation and reciprocal reranking
 - **Chat History**: Conversational context maintained across queries with RAG prompt template
 - **Clickable Chat Messages**: Click user messages to populate search box for easy re-querying
+- **LLM-Powered Follow-ups**: Auto-generated contextual follow-up questions after each response
 - **Smart Citations**: Inline source citations with proper document references
 - **Large Document Support**: Smart chunking for large files
 - **Auto-Summary Generation**: Automatically creates summaries when missing
@@ -22,8 +23,11 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **JSON File Persistence**: Search history with chat context saved to JSON file
 - **Web Interface**: Enhanced Streamlit frontend with improved UX
 - **Django Alternative**: Modern Django web interface with dark theme and progress indicators
-- **Context Length Configuration**: Adjustable context length with save button in search interface
-- **Model Management**: Visual progress bars for Ollama model pulling and deletion
+- **Context Length Configuration**: Adjustable context length (8K-128K) with save button in search interface
+- **Flexible Document Processing**: Choose between structure extraction or sentence splitter during upload
+- **Custom Model Pulling**: Pull any Ollama model by name with automatic config integration
+- **Model Management**: Visual progress bars for Ollama model pulling and deletion with improved error handling
+- **Unified Collections**: Single ChromaDB collection for all LLM services (Ollama, OpenAI, Azure)
 - **Chunk Browser**: Interactive document chunk viewer for database inspection
 - **CLI Tools**: Document indexing, structure extraction, and database administration
 - **Docker Support**: Containerized deployment with GPU support
@@ -189,7 +193,9 @@ The application uses `config.json` for unified service configuration:
 - **default_model**: LLM model name
 - **embed_model**: Embedding model name
 - **default_kb**: Default knowledge base
-- **context_length**: Model context length (8K-128K tokens)
+- **context_length**: Model context length (8K-128K tokens, configurable in search interface)
+- **ollama_library**: Array of available Ollama models (auto-updated when pulling custom models)
+- **embed_library**: Array of available embedding models
 - **Auto-Save**: Settings persist between sessions
 - **Search History**: Stored in `history.json` with 50-entry limit
 
@@ -273,10 +279,22 @@ sudo systemctl status docling
 - **Vector Search Only**: Pure vector search (checkbox option: "Use vector search only")
 - **Chat History Context**: Previous conversation context included in queries
 - **Clickable Messages**: Click any user message in chat to populate search box
-- **Context Length Control**: Adjustable context length (8K-128K) with save functionality
+- **Context Length Control**: Adjustable context length (8K-128K) with save functionality in search interface
+- **Follow-up Prompts**: LLM-generated contextual follow-up questions as clickable buttons
 - **Section Search**: Direct section number matching
 - **Legal Document Search**: Structure-aware search for legal documents
 - **Smart Citations**: Automatic inline citations with [source_id] format
+
+## Document Processing Options
+
+- **Structure Extraction (Default)**: Hierarchical document parsing with metadata preservation
+  - Best for formal documents (legal, academic, technical)
+  - Preserves document hierarchy (schedules, parts, sections, chapters)
+  - Enhanced retrieval with structure-aware search
+- **Sentence Splitter**: Standard sentence-based chunking
+  - Best for general text and informal documents
+  - Faster processing without structure analysis
+  - Selectable via checkbox during document upload
 
 ## Model Support
 
@@ -315,36 +333,29 @@ sudo systemctl status docling
 
 ## Architecture
 
-- **DocumentIndexer**: Core class with hybrid search and chat history support
+- **DocumentIndexer**: Core class with hybrid search, chat history, and flexible processing modes
 - **RAG Prompt Template**: Structured prompts with citation guidelines and chat context
 - **Query Fusion**: Multiple query generation with custom prompts for better retrieval
 - **Chat History Management**: Persistent conversation context across sessions
 - **Smart Citations**: Automatic source_id tagging for inline document references
-- **Ollama Backend**: Local LLM inference with configurable server URLs
+- **Multi-Service Support**: Ollama, OpenAI, and Azure OpenAI with automatic detection
+- **Unified Collections**: Single ChromaDB collection across all LLM services
 - **Docling Integration**: Advanced document parsing with pre-cached models
 - **Enhanced Search**: Hybrid retrieval with query fusion and reciprocal reranking
-- **Smart Chunking**: Adaptive chunking based on document size
+- **Smart Chunking**: Adaptive chunking based on document size and processing mode
+- **Flexible Processing**: Structure extraction or sentence splitter selectable per document
 - **Auto-Recovery**: Generates missing summaries automatically
 - **Structured Processing**: Hierarchical document extraction with metadata
 - **Legal Document Auto-Detection**: Automatic pattern recognition for legal document structures
 - **Real-time Feedback**: Live processing output with line-by-line updates
 - **Multi-KB Support**: Multiple knowledge base management with context tracking
-- **Enhanced UI**: Chat history display and server configuration
-- **Content Extraction**: Markdown cleaning and content preservation
-- **Structure Validation**: JSON schema validation and extraction method comparison
-- **Persistent Config**: Automatic saving of user preferences and server settingsnference with configurable server URLs
-- **Docling Integration**: Advanced document parsing with pre-cached models
-- **Enhanced Search**: Sentence-first keyword search with word fallback and vector search cascade
-- **Smart Chunking**: Adaptive chunking based on document size
-- **Auto-Recovery**: Generates missing summaries automatically
-- **Structured Processing**: Hierarchical document extraction with metadata
-- **Legal Document Auto-Detection**: Automatic pattern recognition for legal document structures
-- **Real-time Feedback**: Live processing output with line-by-line updates
-- **Multi-KB Support**: Multiple knowledge base management with context tracking
-- **Enhanced UI**: Collapsible search history and server configuration
+- **Enhanced UI**: Collapsible search history, server configuration, and follow-up prompts
+- **Custom Model Support**: Pull any Ollama model with automatic config integration
+- **Follow-up Generation**: LLM-powered contextual follow-up questions
 - **Content Extraction**: Markdown cleaning and content preservation
 - **Structure Validation**: JSON schema validation and extraction method comparison
 - **Persistent Config**: Automatic saving of user preferences and server settings
+- **Improved Error Handling**: JSON response validation and better debug output
 
 ## File Structure
 
