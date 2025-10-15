@@ -21,8 +21,7 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Multiple Knowledge Bases**: Create and manage separate knowledge bases
 - **Search History**: Collapsible history with chat context and model tracking
 - **JSON File Persistence**: Search history with chat context saved to JSON file
-- **Web Interface**: Enhanced Streamlit frontend with improved UX
-- **Django Alternative**: Modern Django web interface with dark theme and progress indicators
+- **Django Web Interface**: Modern web interface with dark theme and progress indicators
 - **Context Length Configuration**: Adjustable context length (8K-128K) with save button in search interface
 - **Flexible Document Processing**: Choose between structure extraction or sentence splitter during upload
 - **Custom Model Pulling**: Pull any Ollama model by name with automatic config integration
@@ -72,12 +71,6 @@ docker-compose up --build
 
 ### Web Interface
 
-**Streamlit (Original)**
-```bash
-streamlit run streamlit_app.py
-```
-
-**Django (Alternative)**
 ```bash
 cd django_app
 python manage.py runserver
@@ -360,8 +353,7 @@ sudo systemctl status docling
 ## File Structure
 
 ```
-├── streamlit_app.py              # Original Streamlit web interface
-├── django_app/                   # Django web interface (alternative)
+├── django_app/                   # Django web interface
 │   ├── manage.py                 # Django management script
 │   ├── llamaindex_app/           # Main Django application
 │   │   ├── views.py              # Django views with DocumentIndexer integration
