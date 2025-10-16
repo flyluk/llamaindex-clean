@@ -20,8 +20,11 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Real-time Processing**: Live output streaming during document processing
 - **Multiple Knowledge Bases**: Create and manage separate knowledge bases
 - **Search History**: Collapsible history with chat context and model tracking
+- **Response Time Tracking**: Display query response time in seconds for each assistant message
+- **Fixed Input Layout**: Chat messages scroll independently while search controls stay at bottom
+- **Favicon Support**: Custom SVG favicon for browser tabs
 - **JSON File Persistence**: Search history with chat context saved to JSON file
-- **Django Web Interface**: Modern web interface with dark theme and progress indicators
+- **Django Web Interface**: Modern web interface with dark theme, fixed input area, and response time tracking
 - **Context Length Configuration**: Adjustable context length (8K-128K) with save button in search interface
 - **Flexible Document Processing**: Choose between structure extraction or sentence splitter during upload
 - **Custom Model Pulling**: Pull any Ollama model by name with automatic config integration
@@ -33,6 +36,7 @@ A document indexing and querying system using LlamaIndex with Ollama backend, Ch
 - **Persistent Configuration**: Server URLs and preferences saved automatically
 - **Structure Extraction**: JSON output for document hierarchy analysis
 - **Error Handling**: Improved URL validation and Chrome DevTools compatibility
+- **Improved Config UX**: Server configuration edit button maintains expanded state
 
 ## Prerequisites
 

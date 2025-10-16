@@ -1,6 +1,32 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<style>
+    .chat-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 200px);
+    }
+    .chat-messages-wrapper {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 15px;
+        background-color: #0d1117;
+        margin-bottom: 15px;
+    }
+    .chat-input-wrapper {
+        position: sticky;
+        bottom: 0;
+        background-color: #161b22;
+        padding: 15px;
+        border-radius: 6px;
+        border: 1px solid #30363d;
+        z-index: 100;
+    }
+</style>
+
 <div class="row">
     <div class="col-md-8">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -8,40 +34,40 @@
             <button class="btn btn-outline-secondary btn-sm" onclick="clearChatHistory()">Clear Chat</button>
         </div>
         
-        <!-- Chat Messages -->
-        <div id="chatMessages" class="mb-3" style="max-height: 400px; overflow-y: auto; border: 1px solid #30363d; border-radius: 6px; padding: 15px; background-color: #0d1117;">
-            <div class="text-center text-muted">
-                <i class="bi bi-chat-dots"></i> Start a conversation
-            </div>
-        </div>
-        
-        <form id="searchForm">
-            {% csrf_token %}
-            <div class="mb-3">
-                <input type="text" class="form-control" name="query" placeholder="What are you looking for?" required>
-            </div>
-            <div class="mb-3">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="useDirectVector" name="use_direct_vector">
-                    <label class="form-check-label" for="useDirectVector">
-                        ⚡ Use vector search only (default: hybrid search)
-                    </label>
+        <div class="chat-container">
+            <!-- Chat Messages -->
+            <div id="chatMessages" class="chat-messages-wrapper">
+                <div class="text-center text-muted">
+                    <i class="bi bi-chat-dots"></i> Start a conversation
                 </div>
             </div>
-            <div class="mb-3">
-                <label for="topKSelect" class="form-label">📊 Results to retrieve (top_k):</label>
-                <select class="form-select" id="topKSelect" name="top_k">
-                    <option value="3">3</option>
-                    <option value="5">5</option>
-                    <option value="10" selected>10</option>
-                    <option value="20">20</option>
-                    <option value="50">50</option>
-                </select>
+            
+            <!-- Fixed Input Area -->
+            <div class="chat-input-wrapper">
+                <form id="searchForm">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <input type="text" class="form-control" name="query" placeholder="What are you looking for?" required>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="useDirectVector" name="use_direct_vector">
+                            <label class="form-check-label" for="useDirectVector">
+                                ⚡ Vector only
+                            </label>
+                        </div>
+                        <select class="form-select" id="topKSelect" name="top_k" style="width: auto;">
+                            <option value="3">Top 3</option>
+                            <option value="5">Top 5</option>
+                            <option value="10" selected>Top 10</option>
+                            <option value="20">Top 20</option>
+                            <option value="50">Top 50</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary ms-auto">Search</button>
+                    </div>
+                </form>
             </div>
-            <button type="submit" class="btn btn-primary">Search</button>
-        </form>
-        
-
+        </div>
     </div>
     
     <div class="col-md-4">
@@ -178,8 +204,8 @@ function formatChatHistory() {
     }).join('\n');
 }
 
-function addToChatHistory(role, content) {
-    chatHistory.push({ role, content });
+function addToChatHistory(role, content, responseTime) {
+    chatHistory.push({ role, content, responseTime });
     if (chatHistory.length > 20) { // Keep last 20 messages
         chatHistory = chatHistory.slice(-20);
     }
@@ -198,10 +224,11 @@ function updateChatHistoryDisplay() {
     
     chatHistory.forEach(msg => {
         const isUser = msg.role === 'user';
+        const timeInfo = !isUser && msg.responseTime ? `<span class="text-muted ms-2">⏱️ ${msg.responseTime}s</span>` : '';
         const messageDiv = $(`
             <div class="d-flex ${isUser ? 'justify-content-end' : 'justify-content-start'} mb-3">
                 <div class="${isUser ? 'bg-primary' : ''} text-white p-3 rounded ${isUser ? 'user-message-clickable' : ''}" style="max-width: 80%; word-wrap: break-word; ${isUser ? 'cursor: pointer;' : ''} ${isUser ? '' : 'background-color: #21262d; border: 1px solid #30363d;'}">
-                    <div class="small mb-1">${isUser ? 'You' : 'Assistant'}</div>
+                    <div class="small mb-1">${isUser ? 'You' : 'Assistant'}${timeInfo}</div>
                     <div class="markdown-content">${isUser ? msg.content : marked.parse(msg.content)}</div>
                 </div>
             </div>
@@ -217,7 +244,7 @@ function updateChatHistoryDisplay() {
     });
     
     // Scroll to bottom
-    chatDiv.scrollTop(chatDiv[0].scrollHeight);
+    chatDiv[0].scrollTop = chatDiv[0].scrollHeight;
 }
 
 function clearChatHistory() {
@@ -275,6 +302,7 @@ window.useFollowUp = function(prompt) {
 $('#searchForm').submit(function(e) {
     e.preventDefault();
     const query = $('input[name="query"]').val();
+    const startTime = Date.now();
     
     // Add user message immediately
     addToChatHistory('user', query);
@@ -306,8 +334,11 @@ $('#searchForm').submit(function(e) {
         $(`#${loadingId}`).remove();
         
         if (data.success) {
-            // Add assistant response
-            addToChatHistory('assistant', data.result);
+            // Calculate response time
+            const responseTime = ((Date.now() - startTime) / 1000).toFixed(2);
+            
+            // Add assistant response with time
+            addToChatHistory('assistant', data.result, responseTime);
             
             // Generate and add follow-up prompts
             generateFollowUpPrompts(query, data.result);
