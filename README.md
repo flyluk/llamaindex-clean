@@ -354,9 +354,25 @@ sudo systemctl status docling
 - **Persistent Config**: Automatic saving of user preferences and server settings
 - **Improved Error Handling**: JSON response validation and better debug output
 
+## Architecture Refactoring
+
+The DocumentIndexer has been refactored into modular components:
+
+- **llm_factory.py**: LLM and embedding creation with service auto-detection
+- **document_processor.py**: Document conversion and structure detection
+- **storage_manager.py**: ChromaDB collection management
+- **document_indexer_refactored.py**: Simplified main indexer using components
+
+See [REFACTORING.md](REFACTORING.md) for migration details.
+
 ## File Structure
 
 ```
+├── llm_factory.py                # LLM/embedding factory
+├── document_processor.py         # Document processing
+├── storage_manager.py            # Storage management
+├── document_indexer.py           # Original indexer (800+ lines)
+├── document_indexer_refactored.py # Refactored indexer (350 lines)
 ├── django_app/                   # Django web interface
 │   ├── manage.py                 # Django management script
 │   ├── llamaindex_app/           # Main Django application
